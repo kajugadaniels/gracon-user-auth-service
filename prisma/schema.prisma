@@ -37,6 +37,7 @@ model CitizenIdentity {
   id             String   @id @default(uuid())
   userId         String   @unique               // one-to-one with User
   nidEncrypted   String                         // AES-256-CBC encrypted NID
+  nidHash        String   @unique               // SHA-256 hash of raw NID — for duplicate checks
   surName        String                         // family name from citizen API
   postNames      String                         // given names from citizen API
   sex            String                         // from citizen API
