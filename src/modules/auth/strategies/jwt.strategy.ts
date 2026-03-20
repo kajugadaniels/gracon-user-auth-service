@@ -11,6 +11,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
   ) {
+    const jwtSecret = config.get<string>('JWT_SECRET');
+    if (!jwtSecret) {
+      throw new Error('JWT_SECRET environment variable is not set');
+    }
+
     super({
       // Extract JWT from Authorization: Bearer <token> header
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
@@ -19,7 +24,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       ignoreExpiration: false,
 
       // Secret must match what was used to sign the token
-      secretOrKey: config.get<string>('JWT_SECRET'),
+      secretOrKey: jwtSecret,
     });
   }
 
