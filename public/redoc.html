@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gracon API — Reference Documentation</title>
+    <meta name="description" content="Complete API reference for the Gracon ID Verification Gateway." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body { font-family: 'Inter', sans-serif; }
+      /* ReDoc overrides */
+      redoc-tag-group { font-family: 'Inter', sans-serif !important; }
+    </style>
+  </head>
+  <body>
+    <!-- Loading state -->
+    <div
+      id="loading"
+      style="
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;
+        font-family: 'Inter', sans-serif;
+        font-size: 14px;
+        color: #6b7280;
+        gap: 12px;
+      "
+    >
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="12" cy="12" r="10" stroke="#e5e7eb" stroke-width="3"/>
+        <path d="M12 2a10 10 0 0 1 10 10" stroke="#3b82f6" stroke-width="3" stroke-linecap="round">
+          <animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="0.8s" repeatCount="indefinite"/>
+        </path>
+      </svg>
+      Loading API documentation…
+    </div>
+
+    <div id="redoc-container" style="display: none"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/redoc/bundles/redoc.standalone.js"></script>
+    <script>
+      Redoc.init(
+        '/docs-json',
+        {
+          theme: {
+            colors: {
+              primary: {
+                main: '#2563eb',
+              },
+              success: {
+                main: '#16a34a',
+              },
+              warning: {
+                main: '#d97706',
+              },
+              error: {
+                main: '#dc2626',
+              },
+              text: {
+                primary: '#111827',
+                secondary: '#6b7280',
+              },
+              border: {
+                dark: '#d1d5db',
+                light: '#f3f4f6',
+              },
+              responses: {
+                success: { color: '#16a34a', backgroundColor: '#f0fdf4', tabTextColor: '#15803d' },
+                redirect: { color: '#d97706', backgroundColor: '#fffbeb', tabTextColor: '#b45309' },
+                error: { color: '#dc2626', backgroundColor: '#fef2f2', tabTextColor: '#b91c1c' },
+                info: { color: '#2563eb', backgroundColor: '#eff6ff', tabTextColor: '#1d4ed8' },
+              },
+            },
+            typography: {
+              fontSize: '15px',
+              lineHeight: '1.6',
+              fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
+              headings: {
+                fontFamily: "'Inter', sans-serif",
+                fontWeight: '600',
+              },
+              code: {
+                fontSize: '13px',
+                fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
+                backgroundColor: '#f8fafc',
+                color: '#1e293b',
+              },
+            },
+            sidebar: {
+              width: '280px',
+              backgroundColor: '#0f172a',
+              textColor: '#e2e8f0',
+              activeTextColor: '#60a5fa',
+              groupItems: {
+                textTransform: 'uppercase',
+              },
+            },
+            rightPanel: {
+              backgroundColor: '#1e293b',
+              textColor: '#e2e8f0',
+              width: '45%',
+            },
+            codeBlock: {
+              backgroundColor: '#0f172a',
+            },
+            logo: {
+              gutter: '16px',
+            },
+          },
+          hideDownloadButton: false,
+          disableSearch: false,
+          expandResponses: '200,201',
+          requiredPropsFirst: true,
+          sortPropsAlphabetically: false,
+          showExtensions: false,
+          nativeScrollbars: false,
+          pathInMiddlePanel: false,
+          untrustedSpec: false,
+          scrollYOffset: 0,
+          suppressWarnings: true,
+          payloadSampleIdx: 0,
+          expandSingleSchemaField: true,
+          jsonSampleExpandLevel: 2,
+        },
+        document.getElementById('redoc-container'),
+        function () {
+          document.getElementById('loading').style.display = 'none';
+          document.getElementById('redoc-container').style.display = 'block';
+        }
+      );
+    </script>
+  </body>
+</html>
