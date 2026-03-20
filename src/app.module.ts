@@ -9,6 +9,7 @@ import { CitizenModule } from './modules/citizen/citizen.module';
 import { AppMailerModule } from './common/mailer/mailer.module';
 import { S3Module } from './common/aws/s3/s3.module';
 import { VerificationModule } from './modules/verification/verification.module';
+import { TasksModule } from './common/tasks/tasks.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { VerificationModule } from './modules/verification/verification.module';
     PidModule, // platform ID generation
     AppMailerModule, // email sending service
     S3Module, // AWS S3 file handling
+    TasksModule, // scheduled background tasks (e.g. token cleanup)
 
     // Feature modules
     UsersModule,
