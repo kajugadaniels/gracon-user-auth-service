@@ -8,6 +8,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { CitizenModule } from './modules/citizen/citizen.module';
 import { AppMailerModule } from './common/mailer/mailer.module';
 import { S3Module } from './common/aws/s3/s3.module';
+import { VerificationModule } from './modules/verification/verification.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { S3Module } from './common/aws/s3/s3.module';
     UsersModule,
     AuthModule,
     CitizenModule,
+    VerificationModule,
   ],
 })
 export class AppModule {}
