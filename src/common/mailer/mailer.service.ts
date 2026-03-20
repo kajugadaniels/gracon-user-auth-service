@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { MailerService } from '@nestjs/mailer';
+import { MailerService } from '@nestjs-modules/mailer';
 import { ConfigService } from '@nestjs/config';
 
 interface SendVerificationEmailParams {
@@ -26,7 +26,9 @@ export class AppMailerService {
     private readonly mailerService: MailerService,
     private readonly configService: ConfigService,
   ) {
-    this.frontendUrl = this.configService.get<string>('FRONTEND_URL');
+    const frontendUrl = this.configService.get<string>('FRONTEND_URL');
+    if (!frontendUrl) throw new Error('FRONTEND_URL environment variable is not set');
+    this.frontendUrl = frontendUrl;
   }
 
   // Sends the email verification link after registration
