@@ -8,5 +8,5 @@ export class LookupCitizenDto {
   @Matches(/^\d{16}$/, {
     message: 'National ID number must contain only digits',
   })
-  documentNumber: string | undefined;
+  documentNumber: string;
 }
