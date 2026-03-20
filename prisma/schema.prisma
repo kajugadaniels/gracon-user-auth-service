@@ -1,0 +1,88 @@
+// Prisma schema — defines all database tables and relationships
+// Run `npx prisma migrate dev` to apply changes to Neon Postgres
+// Run `npx prisma generate` to regenerate the TypeScript client
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL")
+}
+
+// ─── Users table ─────────────────────────────────────────────────────────────
+model User {
+  id           String   @id @default(uuid())      // UUID primary key
+  email        String   @unique                    // must be unique
+  phoneNumber  String?                             // optional at registration
+  passwordHash String                              // bcrypt hashed — never plain text
+  imageUrl     String?                             // optional profile photo — S3 URL
+  isVerified   Boolean  @default(false)            // true after email confirmation
+  isActive     Boolean  @default(false)            // true after full verification
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations — one user has one of each
+  citizenIdentity        CitizenIdentity?
+  platformId             PlatformId?
+  emailVerificationToken EmailVerificationToken?
+
+  @@map("users") // actual table name in Postgres
+}
+
+// ─── Citizen identities table ─────────────────────────────────────────────────
+// Stores data retrieved from the national ID API
+// NID is AES-256 encrypted before storing — never stored in plain text
+model CitizenIdentity {
+  id             String   @id @default(uuid())
+  userId         String   @unique               // one-to-one with User
+  nidEncrypted   String                         // AES-256-CBC encrypted NID
+  surName        String                         // family name from citizen API
+  postNames      String                         // given names from citizen API
+  sex            String                         // from citizen API
+  dateOfBirth    DateTime                       // parsed from citizen API date string
+  countryOfBirth String                         // from citizen API
+  createdAt      DateTime @default(now())
+
+  // Relation back to User
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("citizen_identities")
+}
+
+// ─── Platform IDs table ───────────────────────────────────────────────────────
+// Stores the generated platform ID (PID)
+// Format: [birth year 4 digits][6 random digits][1] = 11 digits total
+// Example: 19934829161
+// PID is AES-256 encrypted — pidHash is a SHA-256 hash for fast lookups
+model PlatformId {
+  id           String   @id @default(uuid())
+  userId       String   @unique               // one-to-one with User
+  pidEncrypted String                         // AES-256-CBC encrypted PID
+  pidHash      String   @unique               // SHA-256 hash — used for uniqueness checks
+  createdAt    DateTime @default(now())
+
+  // Relation back to User
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("platform_ids")
+}
+
+// ─── Email verification tokens table ─────────────────────────────────────────
+// Stores tokens sent in verification emails
+// Token itself is hashed before storing — raw token only exists in the email link
+model EmailVerificationToken {
+  id        String   @id @default(uuid())
+  userId    String   @unique               // one active token per user
+  tokenHash String                         // SHA-256 hash of the raw token
+  expiresAt DateTime                       // 24 hours from creation
+  used      Boolean  @default(false)       // true after user clicks the link
+  createdAt DateTime @default(now())
+
+  // Relation back to User
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("email_verification_tokens")
+}
