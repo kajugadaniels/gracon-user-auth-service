@@ -53,7 +53,17 @@ export class S3Service {
   private readonly PRESIGNED_URL_EXPIRY_SECONDS = 3600;
 
   constructor(private readonly config: ConfigService) {
-    this.bucket = this.config.get<string>('AWS_S3_BUCKET_NAME');
+    const bucket = this.config.get<string>('AWS_S3_BUCKET_NAME');
+    const region = this.config.get<string>('AWS_REGION');
+    const accessKeyId = this.config.get<string>('AWS_ACCESS_KEY_ID');
+    const secretAccessKey = this.config.get<string>('AWS_SECRET_ACCESS_KEY');
+
+    if (!bucket) throw new Error('AWS_S3_BUCKET_NAME environment variable is not set');
+    if (!region) throw new Error('AWS_REGION environment variable is not set');
+    if (!accessKeyId) throw new Error('AWS_ACCESS_KEY_ID environment variable is not set');
+    if (!secretAccessKey) throw new Error('AWS_SECRET_ACCESS_KEY environment variable is not set');
+
+    this.bucket = bucket;
     this.profileFolder = this.config.get<string>(
       'AWS_S3_PROFILE_IMAGES_FOLDER',
       'profile-images',
@@ -66,11 +76,8 @@ export class S3Service {
     // Initialize S3 client once — reused across all requests
     // Credentials pulled from .env — never hardcoded
     this.client = new S3Client({
-      region: this.config.get<string>('AWS_REGION'),
-      credentials: {
-        accessKeyId: this.config.get<string>('AWS_ACCESS_KEY_ID'),
-        secretAccessKey: this.config.get<string>('AWS_SECRET_ACCESS_KEY'),
-      },
+      region,
+      credentials: { accessKeyId, secretAccessKey },
       // Retry config — handles transient AWS errors gracefully
       maxAttempts: 3,
     });
