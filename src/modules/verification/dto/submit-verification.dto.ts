@@ -1,10 +1,16 @@
 import { IsString, Length, Matches } from 'class-validator';
 import { Transform } from 'class-transformer';
+import { ApiProperty } from '@nestjs/swagger';
 
-// DTO for the text fields in the verification multipart form
-// Images are handled separately by Multer interceptors
 export class SubmitVerificationDto {
-  // The NID the user types — we compare this against their stored encrypted NID
+  @ApiProperty({
+    description:
+      'The 16-digit National ID number the user types during verification. This is compared against the encrypted NID stored at registration — the comparison happens server-side and the raw NID is never forwarded to the verification engine.',
+    example: '1199880012345678',
+    minLength: 16,
+    maxLength: 16,
+    pattern: '^\\d{16}$',
+  })
   @IsString()
   // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
   @Transform(({ value }) => value?.trim())
@@ -12,5 +18,5 @@ export class SubmitVerificationDto {
   @Matches(/^\d{16}$/, {
     message: 'National ID number must contain only digits',
   })
-  documentNumber: string;
+  documentNumber!: string;
 }

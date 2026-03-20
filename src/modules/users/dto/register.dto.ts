@@ -6,11 +6,17 @@ import {
   IsOptional,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
-// DTO for user registration — every field is validated before
-// the controller method is even called (global ValidationPipe handles this)
 export class RegisterDto {
-  // NID — exactly 16 digits, stripped of whitespace before validation
+  @ApiProperty({
+    description:
+      'The 16-digit National ID number of the user. Must match an existing citizen record in the national ID database.',
+    example: '1199880012345678',
+    minLength: 16,
+    maxLength: 16,
+    pattern: '^\\d{16}$',
+  })
   @IsString()
   // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
   @Transform(({ value }) => value?.trim())
@@ -18,16 +24,25 @@ export class RegisterDto {
   @Matches(/^\d{16}$/, {
     message: 'National ID number must contain only digits',
   })
-  documentNumber: string;
+  documentNumber!: string;
 
-  // Email — normalized to lowercase to prevent duplicate accounts
+  @ApiProperty({
+    description:
+      'The email address of the user. Must be unique across all accounts. Automatically normalized to lowercase.',
+    example: 'amani.uwase@gmail.com',
+    format: 'email',
+  })
   @IsEmail({}, { message: 'Please provide a valid email address' })
   // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
   @Transform(({ value }) => value?.toLowerCase().trim())
-  email: string;
+  email!: string;
 
-  // Phone — optional at registration, E.164 format recommended
-  // Rwandan numbers: +250 followed by 9 digits
+  @ApiPropertyOptional({
+    description:
+      'Phone number of the user. Optional at registration. Recommended format: E.164 (e.g. +250788123456 for Rwanda). Accepts digits, spaces, dashes, parentheses, and a leading +.',
+    example: '+250788123456',
+    pattern: '^\\+?[\\d\\s\\-()]{7,20}$',
+  })
   @IsOptional()
   @IsString()
   // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
@@ -37,7 +52,16 @@ export class RegisterDto {
   })
   phoneNumber?: string;
 
-  // Password — min 8 chars, must have uppercase, lowercase, digit, special char
+  @ApiProperty({
+    description:
+      'Account password. Must be 8–128 characters and contain at least one uppercase letter, one lowercase letter, one digit, and one special character from: @$!%*?&^#',
+    example: 'Secure@2024!',
+    minLength: 8,
+    maxLength: 128,
+    format: 'password',
+    pattern:
+      '^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[@$!%*?&^#])[A-Za-z\\d@$!%*?&^#]',
+  })
   @IsString()
   @Length(8, 128, { message: 'Password must be between 8 and 128 characters' })
   @Matches(
@@ -47,5 +71,5 @@ export class RegisterDto {
         'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character (@$!%*?&^#)',
     },
   )
-  password: string;
+  password!: string;
 }

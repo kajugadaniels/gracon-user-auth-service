@@ -301,7 +301,7 @@ export class AuthService {
    * Decrypts PID only if needed for display — otherwise never decrypts.
    */
   private buildSafeProfile(
-    user: Awaited<ReturnType<UsersService['findByEmail']>>,
+    user: NonNullable<Awaited<ReturnType<UsersService['findByEmail']>>>,
   ): SafeUserProfile {
     return {
       userId: user.id,

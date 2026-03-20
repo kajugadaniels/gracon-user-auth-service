@@ -1,0 +1,15 @@
+node_modules
+dist
+coverage
+
+# Never copy secrets into the image
+.env
+.env.*
+
+# Source control
+.git
+.gitignore
+
+# Dev tooling
+*.log
+.DS_Store
