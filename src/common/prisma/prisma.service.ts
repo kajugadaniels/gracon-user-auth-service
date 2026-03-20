@@ -11,10 +11,13 @@ export class PrismaService
   implements OnModuleInit, OnModuleDestroy
 {
   constructor() {
-    // Prisma 7 requires a driver adapter — datasource url in schema.prisma is no longer supported
-    const adapter = new PrismaPg({
-      connectionString: process.env.DATABASE_URL,
-    });
+    // Prisma 7 requires a driver adapter — datasource url in schema.prisma is no longer supported.
+    // DATABASE_URL is validated by ConfigModule at startup, so this guard is a safety net only.
+    const connectionString = process.env.DATABASE_URL;
+    if (!connectionString) {
+      throw new Error('DATABASE_URL environment variable is not set');
+    }
+    const adapter = new PrismaPg({ connectionString });
     super({ adapter });
   }
 
