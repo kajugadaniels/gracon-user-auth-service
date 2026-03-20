@@ -1,31 +1,24 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule, ConfigService } from '@nestjs/config';
-import { TypeOrmModule } from '@nestjs/typeorm';
-import databaseConfig from './config/database.config';
+import { ConfigModule } from '@nestjs/config';
+import { PrismaModule } from './common/prisma/prisma.module';
+import { EncryptionModule } from './common/crypto/encryption.module';
+import { PidModule } from './common/pid/pid.module';
 import { UsersModule } from './modules/users/users.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CitizenModule } from './modules/citizen/citizen.module';
 
 @Module({
   imports: [
-    // Load .env globally — isGlobal means no need to import ConfigModule again
+    // Load .env globally — available in every module via ConfigService
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [databaseConfig],
       envFilePath: '.env',
     }),
 
-    // Connect to Neon Postgres using DATABASE_URL from .env
-    TypeOrmModule.forRootAsync({
-      inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        type: 'postgres',
-        url: config.get<string>('DATABASE_URL'),
-        ssl: { rejectUnauthorized: false }, // Neon requires SSL
-        autoLoadEntities: true, // auto-load all registered entities
-        synchronize: process.env.APP_ENV === 'development', // only sync schema in dev
-      }),
-    }),
+    // Global modules — injectable everywhere without re-importing
+    PrismaModule, // database access via Prisma
+    EncryptionModule, // AES-256 encryption + SHA-256 hashing
+    PidModule, // platform ID generation
 
     // Feature modules
     UsersModule,
