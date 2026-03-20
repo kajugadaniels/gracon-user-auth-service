@@ -10,78 +10,93 @@ datasource db {
   provider = "postgresql"
 }
 
-// ─── Users table ─────────────────────────────────────────────────────────────
+// ─── Users ────────────────────────────────────────────────────────────────────
 model User {
-  id           String   @id @default(uuid())      // UUID primary key
-  email        String   @unique                    // must be unique
-  phoneNumber  String?                             // optional at registration
-  passwordHash String                              // bcrypt hashed — never plain text
-  imageUrl     String?                             // optional profile photo — S3 URL
-  isVerified   Boolean  @default(false)            // true after email confirmation
-  isActive     Boolean  @default(false)            // true after full verification
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id           String    @id @default(uuid())
+  email        String    @unique
+  phoneNumber  String?
+  passwordHash String
+  imageUrl     String?
+  isVerified   Boolean   @default(false)  // true after email confirmation
+  isActive     Boolean   @default(false)  // true after email confirmation
+  isIdVerified Boolean   @default(false)  // true after face + document check passes
+  idVerifiedAt DateTime?                  // timestamp when ID verification passed
+  verificationAttempts Int @default(0)    // total attempts made — resets on success
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
-  // Relations — one user has one of each
   citizenIdentity        CitizenIdentity?
   platformId             PlatformId?
   emailVerificationToken EmailVerificationToken?
+  idVerifications        IdVerification[]        // one user can have many attempts
 
-  @@map("users") // actual table name in Postgres
+  @@map("users")
 }
 
-// ─── Citizen identities table ─────────────────────────────────────────────────
-// Stores data retrieved from the national ID API
-// NID is AES-256 encrypted before storing — never stored in plain text
+// ─── Citizen Identities ───────────────────────────────────────────────────────
 model CitizenIdentity {
   id             String   @id @default(uuid())
-  userId         String   @unique               // one-to-one with User
-  nidEncrypted   String                         // AES-256-CBC encrypted NID
-  nidHash        String   @unique               // SHA-256 hash of raw NID — for duplicate checks
-  surName        String                         // family name from citizen API
-  postNames      String                         // given names from citizen API
-  sex            String                         // from citizen API
-  dateOfBirth    DateTime                       // parsed from citizen API date string
-  countryOfBirth String                         // from citizen API
+  userId         String   @unique
+  nidEncrypted   String                    // AES-256-CBC encrypted NID
+  nidHash        String   @unique          // SHA-256 hash — for duplicate checks
+  surName        String
+  postNames      String
+  sex            String
+  dateOfBirth    DateTime
+  countryOfBirth String
   createdAt      DateTime @default(now())
 
-  // Relation back to User
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("citizen_identities")
 }
 
-// ─── Platform IDs table ───────────────────────────────────────────────────────
-// Stores the generated platform ID (PID)
-// Format: [birth year 4 digits][6 random digits][1] = 11 digits total
-// Example: 19934829161
-// PID is AES-256 encrypted — pidHash is a SHA-256 hash for fast lookups
+// ─── Platform IDs ─────────────────────────────────────────────────────────────
 model PlatformId {
   id           String   @id @default(uuid())
-  userId       String   @unique               // one-to-one with User
-  pidEncrypted String                         // AES-256-CBC encrypted PID
-  pidHash      String   @unique               // SHA-256 hash — used for uniqueness checks
+  userId       String   @unique
+  pidEncrypted String                      // AES-256-CBC encrypted PID
+  pidHash      String   @unique            // SHA-256 hash — for lookup and uniqueness
   createdAt    DateTime @default(now())
 
-  // Relation back to User
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("platform_ids")
 }
 
-// ─── Email verification tokens table ─────────────────────────────────────────
-// Stores tokens sent in verification emails
-// Token itself is hashed before storing — raw token only exists in the email link
+// ─── Email Verification Tokens ────────────────────────────────────────────────
 model EmailVerificationToken {
   id        String   @id @default(uuid())
-  userId    String   @unique               // one active token per user
-  tokenHash String                         // SHA-256 hash of the raw token
-  expiresAt DateTime                       // 24 hours from creation
-  used      Boolean  @default(false)       // true after user clicks the link
+  userId    String   @unique
+  tokenHash String                         // SHA-256 hash of raw token
+  expiresAt DateTime
+  used      Boolean  @default(false)
   createdAt DateTime @default(now())
 
-  // Relation back to User
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("email_verification_tokens")
+}
+
+// ─── ID Verifications ─────────────────────────────────────────────────────────
+// Audit log of every verification attempt — pass or fail
+// Stores scores only — never images or biometric data
+model IdVerification {
+  id              String   @id @default(uuid())
+  userId          String                        // which user attempted
+  attemptNumber   Int                           // 1, 2, or 3 — max 3 per window
+  documentMatch   Boolean                       // did typed NID match stored NID
+  faceScore       Float                         // Rekognition CompareFaces 0-100
+  livenessScore   Float                         // Rekognition FaceLiveness 0-100
+  compositeScore  Float                         // weighted final score 0-100
+  passed          Boolean                       // compositeScore >= 80 AND documentMatch
+  failReason      String?                       // human-readable reason if failed
+  ipAddress       String?                       // for fraud detection
+  createdAt       DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Index on userId + createdAt for fast attempt window queries
+  @@index([userId, createdAt])
+  @@map("id_verifications")
 }
