@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { validateEnv } from './config/env.validation';
 import { PrismaModule } from './common/prisma/prisma.module';
 import { EncryptionModule } from './common/crypto/encryption.module';
 import { PidModule } from './common/pid/pid.module';
@@ -17,6 +18,7 @@ import { TasksModule } from './common/tasks/tasks.module';
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
+      validate: validateEnv,
     }),
 
     // Global modules — injectable everywhere without re-importing
