@@ -3,6 +3,7 @@ import { HttpModule } from '@nestjs/axios';
 import { CacheModule } from '@nestjs/cache-manager';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { CitizenService } from './citizen.service';
+import { CitizenController } from './citizen.controller';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { CitizenService } from './citizen.service';
     }),
   ],
   providers: [CitizenService],
+  controllers: [CitizenController],
   exports: [CitizenService], // exported so UsersModule can inject it
 })
 export class CitizenModule {}
