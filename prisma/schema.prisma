@@ -31,6 +31,7 @@ model User {
   idVerifications        IdVerification[]        // one user can have many attempts
 
   @@map("users")
+  refreshTokens RefreshToken[]
 }
 
 // ─── Citizen Identities ───────────────────────────────────────────────────────
@@ -99,4 +100,24 @@ model IdVerification {
   // Index on userId + createdAt for fast attempt window queries
   @@index([userId, createdAt])
   @@map("id_verifications")
+}
+
+// ─── Refresh Tokens ───────────────────────────────────────────────────────────
+// Stores hashed refresh tokens — allows token revocation on logout
+// Raw token only exists in the response — hash stored in DB
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  tokenHash String   @unique          // SHA-256 hash of raw refresh token
+  expiresAt DateTime                  // 30 days from issue
+  revoked   Boolean  @default(false)  // true after logout or token rotation
+  ipAddress String?                   // for suspicious activity detection
+  userAgent String?                   // device info
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Index for fast lookup by userId when logging out all devices
+  @@index([userId])
+  @@map("refresh_tokens")
 }
