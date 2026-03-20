@@ -45,7 +45,11 @@ export class CitizenService {
     private readonly configService: ConfigService,
     @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
   ) {
-    this.apiUrl = this.configService.get<string>('CITIZEN_API_URL');
+    const apiUrl = this.configService.get<string>('CITIZEN_API_URL');
+    if (!apiUrl) {
+      throw new Error('CITIZEN_API_URL environment variable is not set');
+    }
+    this.apiUrl = apiUrl;
 
     // Build Basic Auth header once at startup — base64("username:password")
     // Never logged, never sent to the client, never stored in DB
