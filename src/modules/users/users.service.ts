@@ -5,7 +5,6 @@ import {
   BadRequestException,
   InternalServerErrorException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -38,7 +37,6 @@ export class UsersService {
     private readonly pidService: PidService,
     private readonly citizenService: CitizenService,
     private readonly mailer: AppMailerService,
-    private readonly config: ConfigService,
   ) {}
 
   // ─── Registration ─────────────────────────────────────────────────────────
@@ -150,8 +148,7 @@ export class UsersService {
       createdUser = result;
     } catch (error) {
       // Prisma unique constraint violation — race condition safety
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      if (error?.code === 'P2002') {
+      if (typeof error === 'object' && error !== null && (error as Record<string, unknown>)['code'] === 'P2002') {
         throw new ConflictException(
           'An account with this email or National ID already exists',
         );
@@ -270,15 +267,15 @@ export class UsersService {
     });
 
     // Decrypt PID to include in welcome email — only decrypted in memory
-    const rawPid = this.encryption.decrypt(
-      tokenRecord.user.platformId.pidEncrypted,
-    );
+    const rawPid = tokenRecord.user.platformId
+      ? this.encryption.decrypt(tokenRecord.user.platformId.pidEncrypted)
+      : '';
 
     // Send welcome email with their Platform ID
     await this.mailer.sendWelcomeEmail({
       to: tokenRecord.user.email,
-      surName: tokenRecord.user.citizenIdentity.surName,
-      postNames: tokenRecord.user.citizenIdentity.postNames,
+      surName: tokenRecord.user.citizenIdentity?.surName ?? '',
+      postNames: tokenRecord.user.citizenIdentity?.postNames ?? '',
       platformId: rawPid,
     });
 
