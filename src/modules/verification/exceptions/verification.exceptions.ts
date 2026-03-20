@@ -6,7 +6,8 @@ export class VerificationAlreadyPassedException extends HttpException {
       {
         statusCode: HttpStatus.CONFLICT,
         error: 'Already Verified',
-        message: 'Your identity has already been verified. You can proceed to login.',
+        message:
+          'Your identity has already been verified. You can proceed to login.',
       },
       HttpStatus.CONFLICT,
     );
@@ -33,7 +34,8 @@ export class EmailNotVerifiedException extends HttpException {
       {
         statusCode: HttpStatus.FORBIDDEN,
         error: 'Email Not Verified',
-        message: 'Please verify your email address before proceeding with ID verification.',
+        message:
+          'Please verify your email address before proceeding with ID verification.',
       },
       HttpStatus.FORBIDDEN,
     );
@@ -46,7 +48,8 @@ export class EngineUnavailableException extends HttpException {
       {
         statusCode: HttpStatus.SERVICE_UNAVAILABLE,
         error: 'Verification Service Unavailable',
-        message: 'The verification service is temporarily unavailable. Please try again in a few minutes.',
+        message:
+          'The verification service is temporarily unavailable. Please try again in a few minutes.',
       },
       HttpStatus.SERVICE_UNAVAILABLE,
     );
