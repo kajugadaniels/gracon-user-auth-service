@@ -6,6 +6,7 @@ import { PidModule } from './common/pid/pid.module';
 import { UsersModule } from './modules/users/users.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CitizenModule } from './modules/citizen/citizen.module';
+import { AppMailerModule } from './common/mailer/mailer.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { CitizenModule } from './modules/citizen/citizen.module';
     PrismaModule, // database access via Prisma
     EncryptionModule, // AES-256 encryption + SHA-256 hashing
     PidModule, // platform ID generation
+    AppMailerModule, // email sending service
 
     // Feature modules
     UsersModule,
