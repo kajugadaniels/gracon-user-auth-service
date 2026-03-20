@@ -40,8 +40,12 @@ export class VerificationService {
     private readonly httpService: HttpService,
     private readonly config: ConfigService,
   ) {
-    this.engineUrl = this.config.get<string>('ENGINE_URL');
-    this.engineApiKey = this.config.get<string>('ENGINE_API_KEY');
+    const engineUrl = this.config.get<string>('ENGINE_URL');
+    const engineApiKey = this.config.get<string>('ENGINE_API_KEY');
+    if (!engineUrl) throw new Error('ENGINE_URL environment variable is not set');
+    if (!engineApiKey) throw new Error('ENGINE_API_KEY environment variable is not set');
+    this.engineUrl = engineUrl;
+    this.engineApiKey = engineApiKey;
   }
 
   // ─── Main verification flow ───────────────────────────────────────────────
@@ -78,22 +82,30 @@ export class VerificationService {
       },
     });
 
-    // ── Gate 2: Email must be verified first
+    // ── Gate 2: User must exist
+    if (!user) {
+      throw new EmailNotVerifiedException();
+    }
+
+    // ── Gate 3: Email must be verified first
     if (!user.isVerified || !user.isActive) {
       throw new EmailNotVerifiedException();
     }
 
-    // ── Gate 3: Already passed — idempotent response
+    // ── Gate 4: Already passed — idempotent response
     if (user.isIdVerified) {
       throw new VerificationAlreadyPassedException();
     }
 
-    // ── Gate 4: Check attempt count within the time window
+    // ── Gate 5: Check attempt count within the time window
     await this.enforceAttemptLimit(userId);
 
     // ── Step 1: Document number check
     // Decrypt stored NID and compare against what user typed
     // Done here in NestJS — engine never sees the raw NID
+    if (!user.citizenIdentity) {
+      throw new EmailNotVerifiedException();
+    }
     const storedNid = this.encryption.decrypt(
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
       user.citizenIdentity.nidEncrypted,
@@ -256,13 +268,13 @@ export class VerificationService {
 
     return {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      isIdVerified: user.isIdVerified,
+      isIdVerified: user?.isIdVerified ?? false,
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       attemptsUsed: attemptsInWindow,
       attemptsRemaining,
-      canAttempt: !user.isIdVerified && attemptsRemaining > 0,
+      canAttempt: !(user?.isIdVerified ?? false) && attemptsRemaining > 0,
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      lastAttemptAt: user.idVerifications[0]?.createdAt ?? null,
+      lastAttemptAt: user?.idVerifications[0]?.createdAt ?? null,
     };
   }
 
