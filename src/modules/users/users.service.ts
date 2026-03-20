@@ -372,6 +372,9 @@ export class UsersService {
         passwordHash: true,
         isVerified: true,
         isActive: true,
+        isIdVerified: true,
+        idVerifiedAt: true,
+        createdAt: true,
         imageUrl: true,
         phoneNumber: true,
         citizenIdentity: {
