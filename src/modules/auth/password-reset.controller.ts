@@ -10,30 +10,34 @@ import {
 import { PasswordResetService } from './password-reset.service';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import {
+  ThrottleAuth,
+  ThrottleStrict,
+} from '../../common/decorators/throttle.decorator';
 
-// Routes: /api/v1/auth/password-reset/*
-// No JWT required — user is not authenticated during this flow
 @Controller('auth/password-reset')
 export class PasswordResetController {
   constructor(private readonly passwordResetService: PasswordResetService) {}
 
   /**
    * POST /api/v1/auth/password-reset/request
-   * User submits their email to receive a reset link.
-   * Always returns 200 regardless of whether email exists.
+   * Auth limit: 5 per minute.
+   * Prevents email flooding and user enumeration via timing.
    */
   @Post('request')
+  @ThrottleAuth()
   @HttpCode(HttpStatus.OK)
   async requestReset(@Body() dto: ForgotPasswordDto) {
     return this.passwordResetService.requestReset(dto);
   }
 
   /**
-   * GET /api/v1/auth/password-reset/validate?userId=xxx&token=yyy
-   * Called when the reset page loads — checks token validity
-   * before showing the new password form.
+   * GET /api/v1/auth/password-reset/validate
+   * Auth limit: 5 per minute.
+   * Prevents token brute-forcing via rapid validate calls.
    */
   @Get('validate')
+  @ThrottleAuth()
   @HttpCode(HttpStatus.OK)
   async validateToken(
     @Query('userId') userId: string,
@@ -44,10 +48,11 @@ export class PasswordResetController {
 
   /**
    * POST /api/v1/auth/password-reset/reset
-   * User submits new password along with their token.
-   * On success: all sessions revoked, redirect to login.
+   * Strict limit: 3 per 10 minutes.
+   * Password changes are high-value targets — tightest restriction.
    */
   @Post('reset')
+  @ThrottleStrict()
   @HttpCode(HttpStatus.OK)
   async resetPassword(@Body() dto: ResetPasswordDto) {
     return this.passwordResetService.resetPassword(dto);
