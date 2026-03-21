@@ -31,12 +31,12 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     return super.canActivate(context);
   }
 
-  handleRequest(
+  handleRequest<TUser = Express.User>(
     err: unknown,
-    user: Express.User | false,
+    user: TUser | false,
     info: unknown,
     context: ExecutionContext,
-  ) {
+  ): TUser {
     // Passport validation failed — token missing, expired, or invalid
     if (err || !user) {
       throw new UnauthorizedException(
@@ -48,8 +48,9 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     // Falls back to 'full' if decorator not present
     const requiredType =
       this.reflector.getAllAndOverride<'full' | 'any'>(TOKEN_TYPE_KEY, [
-      [context.getHandler(), context.getClass()],
-    ) ?? 'full';
+        context.getHandler(),
+        context.getClass(),
+      ]) ?? 'full';
 
     // All routes accept 'full' tokens — only check if route requires 'any'
     if (requiredType === 'any') {
@@ -57,7 +58,7 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     }
 
     // Route requires 'full' — reject limited tokens
-    const payload = user as { tokenType?: string };
+    const payload = user as unknown as { tokenType?: string };
 
     if (payload.tokenType === 'limited') {
       throw new ForbiddenException(
