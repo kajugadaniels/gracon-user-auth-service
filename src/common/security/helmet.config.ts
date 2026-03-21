@@ -69,13 +69,6 @@ export function buildHelmetConfig(env: string): HelmetOptions {
     // external services this API communicates with.
     dnsPrefetchControl: { allow: false },
 
-    // ── Expect-CT (Certificate Transparency) ─────────────────────
-    // Ensures only certificates logged in public CT logs are accepted.
-    // Prevents misissued certificates from going undetected.
-    // Note: deprecated in modern browsers but still useful for
-    // older clients in a production environment.
-    expectCt: isProd ? { maxAge: 86400, enforce: true } : false,
-
     // ── Frameguard ────────────────────────────────────────────────
     // Sets X-Frame-Options: DENY — prevents the API responses from
     // being embedded in an iframe on another domain (clickjacking).
