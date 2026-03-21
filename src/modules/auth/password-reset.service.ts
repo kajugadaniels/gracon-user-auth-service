@@ -208,7 +208,7 @@ export class PasswordResetService {
   private async findValidToken(
     userId: string,
     rawToken: string,
-  ): Promise
+  ): Promise<
     | { valid: true;  record: { id: string }; reason: null }
     | { valid: false; record: null;           reason: string }
   > {
