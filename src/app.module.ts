@@ -13,60 +13,40 @@ import { AuthModule } from './modules/auth/auth.module';
 import { CitizenModule } from './modules/citizen/citizen.module';
 import { VerificationModule } from './modules/verification/verification.module';
 import { CustomThrottlerGuard } from './common/guards/throttler.guard';
+import { DocsAuthMiddleware } from './common/security/docs-auth.middleware';
 
 @Module({
   imports: [
-    // Load .env globally across all modules
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
     }),
 
-    // Rate limiting — three named throttlers with different limits.
-    // Applied globally via APP_GUARD below.
-    // Individual routes override with @ThrottleAuth(), @ThrottleStrict(), etc.
     ThrottlerModule.forRoot([
-      {
-        // Default limit — applied to all routes not using a named decorator
-        name: 'general',
-        ttl: 60_000, // 1 minute window
-        limit: 60, // 60 requests per window per IP
-      },
-      {
-        // For authentication endpoints — login, register, forgot password
-        name: 'auth',
-        ttl: 60_000, // 1 minute window
-        limit: 5, // 5 attempts per window per IP
-      },
-      {
-        // For high-security endpoints — verification submit, change password
-        name: 'strict',
-        ttl: 600_000, // 10 minute window
-        limit: 3, // 3 attempts per window per IP
-      },
+      { name: 'general', ttl: 60_000, limit: 60 },
+      { name: 'auth', ttl: 60_000, limit: 5 },
+      { name: 'strict', ttl: 600_000, limit: 3 },
     ]),
 
-    // Global common modules — injectable everywhere
     PrismaModule,
     EncryptionModule,
     PidModule,
     AppMailerModule,
     S3Module,
     TasksModule,
-
-    // Feature modules
     UsersModule,
     AuthModule,
     CitizenModule,
     VerificationModule,
   ],
   providers: [
-    // Apply CustomThrottlerGuard globally — every route is rate-limited
-    // unless decorated with @SkipThrottle()
+    // Global rate limiting guard
     {
       provide: APP_GUARD,
       useClass: CustomThrottlerGuard,
     },
+    // Docs middleware registered here so NestJS can inject ConfigService
+    DocsAuthMiddleware,
   ],
 })
 export class AppModule {}
