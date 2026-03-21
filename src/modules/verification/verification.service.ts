@@ -80,7 +80,12 @@ export class VerificationService {
         isIdVerified: true,
         verificationAttempts: true,
         citizenIdentity: {
-          select: { nidEncrypted: true },
+          select: {
+            nidEncrypted: true,
+            surName: true,
+            postNames: true,
+            dateOfBirth: true,
+          },
         },
       },
     });
@@ -220,6 +225,15 @@ export class VerificationService {
     const attemptsUsed = attemptNumber;
     const attemptsRemaining = Math.max(0, MAX_ATTEMPTS - attemptsUsed);
 
+    // Build identity summary from citizen record for the result screen
+    const idInfo = user.citizenIdentity
+      ? {
+          fullName: `${user.citizenIdentity.surName} ${user.citizenIdentity.postNames}`.trim(),
+          dateOfBirth: user.citizenIdentity.dateOfBirth.toISOString(),
+          documentNumber,
+        }
+      : undefined;
+
     return {
       success: true,
       passed: engineResponse.passed,
@@ -233,6 +247,7 @@ export class VerificationService {
       failReason: engineResponse.fail_reason,
       attemptsUsed,
       attemptsRemaining,
+      idInfo,
       upgradedTokens,
     };
   }
