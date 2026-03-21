@@ -215,6 +215,8 @@ export class AuthService {
       select: { id: true, email: true },
     });
 
+    if (!user) throw new Error(`User not found: ${userId}`);
+
     const tokens = await this.generateTokens(
       user.id,
       user.email,
@@ -294,7 +296,7 @@ export class AuthService {
   }
 
   private buildSafeProfile(
-    user: Awaited<ReturnType<UsersService['findByEmail']>>,
+    user: NonNullable<Awaited<ReturnType<UsersService['findByEmail']>>>,
   ): SafeUserProfile {
     return {
       userId: user.id,
