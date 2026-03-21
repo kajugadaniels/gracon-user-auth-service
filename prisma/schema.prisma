@@ -108,16 +108,17 @@ model IdVerification {
 model RefreshToken {
   id        String   @id @default(uuid())
   userId    String
-  tokenHash String   @unique          // SHA-256 hash of raw refresh token
-  expiresAt DateTime                  // 30 days from issue
-  revoked   Boolean  @default(false)  // true after logout or token rotation
-  ipAddress String?                   // for suspicious activity detection
-  userAgent String?                   // device info
+  tokenHash String   @unique
+  // "full" = normal login, "limited" = post-email-verify, pre-ID-verify
+  tokenType String   @default("full")
+  expiresAt DateTime
+  revoked   Boolean  @default(false)
+  ipAddress String?
+  userAgent String?
   createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  // Index for fast lookup by userId when logging out all devices
   @@index([userId])
   @@map("refresh_tokens")
 }
