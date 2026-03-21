@@ -40,7 +40,9 @@ class EnvironmentVariables {
 
   // ─── Encryption ────────────────────────────────────────────────────────────
   @IsString()
-  @Length(32, 32, { message: 'ENCRYPTION_SECRET must be exactly 32 characters (AES-256 key)' })
+  @Length(32, 32, {
+    message: 'ENCRYPTION_SECRET must be exactly 32 characters (AES-256 key)',
+  })
   ENCRYPTION_SECRET!: string;
 
   // ─── Citizen API ───────────────────────────────────────────────────────────
@@ -79,7 +81,9 @@ class EnvironmentVariables {
 
   // ─── Frontend ──────────────────────────────────────────────────────────────
   @IsString()
-  @IsNotEmpty({ message: 'FRONTEND_URL is required (used in verification email links)' })
+  @IsNotEmpty({
+    message: 'FRONTEND_URL is required (used in verification email links)',
+  })
   FRONTEND_URL!: string;
 
   // ─── AWS ───────────────────────────────────────────────────────────────────
@@ -101,11 +105,16 @@ class EnvironmentVariables {
 
   // ─── Engine ────────────────────────────────────────────────────────────────
   @IsString()
-  @IsNotEmpty({ message: 'ENGINE_URL is required (URL of the FastAPI verification engine)' })
+  @IsNotEmpty({
+    message: 'ENGINE_URL is required (URL of the FastAPI verification engine)',
+  })
   ENGINE_URL!: string;
 
   @IsString()
-  @IsNotEmpty({ message: 'ENGINE_API_KEY is required (must match the engine ENGINE_API_KEY)' })
+  @IsNotEmpty({
+    message:
+      'ENGINE_API_KEY is required (must match the engine ENGINE_API_KEY)',
+  })
   ENGINE_API_KEY!: string;
 }
 
@@ -113,7 +122,9 @@ class EnvironmentVariables {
  * Called by ConfigModule.forRoot({ validate }).
  * Throws with a full list of problems so you can fix all issues in one shot.
  */
-export function validateEnv(config: Record<string, unknown>): EnvironmentVariables {
+export function validateEnv(
+  config: Record<string, unknown>,
+): EnvironmentVariables {
   const validated = plainToInstance(EnvironmentVariables, config, {
     enableImplicitConversion: true, // converts "3000" → 3000 for @IsInt fields
   });
