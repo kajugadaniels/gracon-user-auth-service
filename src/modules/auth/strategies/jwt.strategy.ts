@@ -11,31 +11,18 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
   ) {
-    const jwtSecret = config.get<string>('JWT_SECRET');
-    if (!jwtSecret) {
-      throw new Error('JWT_SECRET environment variable is not set');
-    }
-
     super({
-      // Extract JWT from Authorization: Bearer <token> header
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
-
-      // Reject expired tokens — never allow expired JWTs
       ignoreExpiration: false,
-
-      // Secret must match what was used to sign the token
-      secretOrKey: jwtSecret,
+      secretOrKey: config.get<string>('JWT_SECRET'),
     });
   }
 
   /**
-   * Called automatically by Passport after the JWT signature is verified.
-   * We re-fetch the user from DB on every request to catch:
-   * - Deactivated accounts
-   * - Users whose verification status changed
-   * - Deleted users
-   *
-   * The returned value is attached to req.user
+   * Called after Passport verifies the JWT signature.
+   * Re-fetches the user from DB to catch deactivated accounts.
+   * Returns an object that becomes req.user — read by @CurrentUser()
+   * and by JwtAuthGuard.handleRequest() for token type enforcement.
    */
   async validate(payload: JwtPayload) {
     const user = await this.prisma.user.findUnique({
@@ -49,19 +36,22 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       },
     });
 
-    // User deleted after token was issued
     if (!user) {
-      throw new UnauthorizedException('Account not found');
+      throw new UnauthorizedException('Account not found.');
     }
 
-    // Account deactivated after token was issued
     if (!user.isActive) {
       throw new UnauthorizedException(
         'Your account has been deactivated. Please contact support.',
       );
     }
 
-    // Return object is attached to req.user — used by @CurrentUser() decorator
-    return { userId: user.id, email: user.email };
+    // Return userId, email, and tokenType — all three are used by guards
+    // and decorators downstream
+    return {
+      userId: user.id,
+      email: user.email,
+      tokenType: payload.tokenType ?? 'full', // default to full for legacy tokens
+    };
   }
 }
