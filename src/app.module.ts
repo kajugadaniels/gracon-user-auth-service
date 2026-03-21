@@ -1,33 +1,31 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { validateEnv } from './config/env.validation';
 import { PrismaModule } from './common/prisma/prisma.module';
 import { EncryptionModule } from './common/crypto/encryption.module';
 import { PidModule } from './common/pid/pid.module';
+import { AppMailerModule } from './common/mailer/mailer.module';
+import { S3Module } from './common/aws/s3/s3.module';
+import { TasksModule } from './common/tasks/tasks.module';
 import { UsersModule } from './modules/users/users.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CitizenModule } from './modules/citizen/citizen.module';
-import { AppMailerModule } from './common/mailer/mailer.module';
-import { S3Module } from './common/aws/s3/s3.module';
 import { VerificationModule } from './modules/verification/verification.module';
-import { TasksModule } from './common/tasks/tasks.module';
 
 @Module({
   imports: [
-    // Load .env globally — available in every module via ConfigService
+    // Load .env globally across all modules
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
-      validate: validateEnv,
     }),
 
-    // Global modules — injectable everywhere without re-importing
-    PrismaModule, // database access via Prisma
-    EncryptionModule, // AES-256 encryption + SHA-256 hashing
-    PidModule, // platform ID generation
-    AppMailerModule, // email sending service
-    S3Module, // AWS S3 file handling
-    TasksModule, // scheduled background tasks (e.g. token cleanup)
+    // Global common modules — injectable everywhere
+    PrismaModule,
+    EncryptionModule,
+    PidModule,
+    AppMailerModule,
+    S3Module,
+    TasksModule,
 
     // Feature modules
     UsersModule,
@@ -35,5 +33,7 @@ import { TasksModule } from './common/tasks/tasks.module';
     CitizenModule,
     VerificationModule,
   ],
+  // No global APP_GUARD here — guards are applied per-controller
+  // so each route can declare its own token type requirement
 })
 export class AppModule {}
