@@ -4,17 +4,22 @@ import {
   ConflictException,
   BadRequestException,
   InternalServerErrorException,
+  NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { EncryptionService } from '../../common/crypto/encryption.service';
+import { S3Service } from '../../common/aws/s3/s3.service';
 import { PidService } from '../../common/pid/pid.service';
 import { CitizenService } from '../citizen/citizen.service';
 import { AppMailerService } from '../../common/mailer/mailer.service';
 import { RegisterDto } from './dto/register.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { ResendVerificationDto } from './dto/resend-verification.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { RegistrationResult } from './interfaces/registration-result.interface';
 
 @Injectable()
@@ -34,6 +39,7 @@ export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly encryption: EncryptionService,
+    private readonly s3: S3Service,
     private readonly pidService: PidService,
     private readonly citizenService: CitizenService,
     private readonly mailer: AppMailerService,
@@ -406,5 +412,314 @@ export class UsersService {
         phoneNumber: true,
       },
     });
+  }
+
+  // ─── Profile ──────────────────────────────────────────────────────────────
+
+  /**
+   * Returns the full safe profile for the authenticated user.
+   *
+   * - Citizen identity fields (name, DOB, sex, country) are included.
+   * - Platform ID is decrypted in-memory and included once; it is never
+   *   stored in plain text.
+   * - If the user has a profile image, a 1-hour presigned S3 URL is generated
+   *   so the browser can display it without exposing the raw S3 key.
+   * - passwordHash, nidEncrypted, and pidEncrypted are never returned.
+   */
+  async getProfile(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        phoneNumber: true,
+        imageUrl: true,
+        isVerified: true,
+        isActive: true,
+        isIdVerified: true,
+        idVerifiedAt: true,
+        verificationAttempts: true,
+        createdAt: true,
+        updatedAt: true,
+        citizenIdentity: {
+          select: {
+            surName: true,
+            postNames: true,
+            sex: true,
+            dateOfBirth: true,
+            countryOfBirth: true,
+          },
+        },
+        platformId: {
+          select: { pidEncrypted: true },
+        },
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Decrypt Platform ID in-memory — never expose the ciphertext
+    const platformId = user.platformId
+      ? this.encryption.decrypt(user.platformId.pidEncrypted)
+      : null;
+
+    // Generate a presigned URL for the profile image if one exists
+    let profileImageUrl: string | null = null;
+    let profileImageExpiresAt: Date | null = null;
+
+    if (user.imageUrl) {
+      const presigned = await this.s3.getPresignedUrl(user.imageUrl);
+      profileImageUrl = presigned.url;
+      profileImageExpiresAt = presigned.expiresAt;
+    }
+
+    return {
+      id: user.id,
+      email: user.email,
+      phoneNumber: user.phoneNumber,
+      isVerified: user.isVerified,
+      isActive: user.isActive,
+      isIdVerified: user.isIdVerified,
+      idVerifiedAt: user.idVerifiedAt,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+      platformId,
+      profileImageUrl,
+      profileImageExpiresAt,
+      citizenIdentity: user.citizenIdentity
+        ? {
+            surName: user.citizenIdentity.surName,
+            postNames: user.citizenIdentity.postNames,
+            sex: user.citizenIdentity.sex,
+            dateOfBirth: user.citizenIdentity.dateOfBirth,
+            countryOfBirth: user.citizenIdentity.countryOfBirth,
+          }
+        : null,
+    };
+  }
+
+  /**
+   * Updates mutable profile fields for the authenticated user.
+   *
+   * - phoneNumber: updated directly if provided.
+   * - email: if changed, the account is locked (isVerified + isActive → false)
+   *   and a new verification email is sent. Throws ConflictException if the
+   *   new address is already taken (checked before any writes).
+   *
+   * Returns the updated safe profile via getProfile().
+   */
+  async updateProfile(userId: string, dto: UpdateProfileDto) {
+    // Load the current user to compare values
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true, citizenIdentity: { select: { surName: true, postNames: true } } },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const isEmailChanging = dto.email && dto.email !== user.email;
+
+    // Guard: reject if the new email is already taken by another account
+    if (isEmailChanging) {
+      const taken = await this.prisma.user.findUnique({
+        where: { email: dto.email },
+        select: { id: true },
+      });
+
+      if (taken && taken.id !== userId) {
+        throw new ConflictException(
+          'An account with this email address already exists',
+        );
+      }
+    }
+
+    // Build the update payload — only include fields that were provided
+    const updateData: Record<string, unknown> = {};
+
+    if (dto.phoneNumber !== undefined) {
+      updateData.phoneNumber = dto.phoneNumber;
+    }
+
+    if (isEmailChanging) {
+      updateData.email = dto.email;
+      // Lock the account until the new email is verified
+      updateData.isVerified = false;
+      updateData.isActive = false;
+    }
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: updateData,
+    });
+
+    // If the email changed, issue a new verification token and send the email
+    if (isEmailChanging) {
+      const rawToken = crypto.randomBytes(32).toString('hex');
+      const tokenHash = this.encryption.hash(rawToken);
+      const tokenExpiry = new Date(Date.now() + this.TOKEN_EXPIRY_MS);
+
+      // Upsert — replace any existing token for this user
+      await this.prisma.emailVerificationToken.upsert({
+        where: { userId },
+        create: {
+          userId,
+          tokenHash,
+          expiresAt: tokenExpiry,
+          used: false,
+        },
+        update: {
+          tokenHash,
+          expiresAt: tokenExpiry,
+          used: false,
+          createdAt: new Date(),
+        },
+      });
+
+      await this.mailer.sendVerificationEmail({
+        to: dto.email!,
+        surName: user.citizenIdentity?.surName ?? '',
+        postNames: user.citizenIdentity?.postNames ?? '',
+        userId,
+        token: rawToken,
+      });
+
+      this.logger.log(
+        `Email changed for user ${userId} — verification required for new address`,
+      );
+    }
+
+    // Return the full updated profile
+    return this.getProfile(userId);
+  }
+
+  /**
+   * Replaces the user's profile image on S3.
+   *
+   * Flow:
+   * 1. Delete the old image from S3 if one exists.
+   * 2. Upload the new image to the profile-images folder.
+   * 3. Update user.imageUrl with the new S3 key.
+   * 4. Return a presigned URL for the new image so the client can display it
+   *    immediately without a separate GET /profile round-trip.
+   */
+  async uploadProfileImage(
+    userId: string,
+    file: Express.Multer.File,
+  ): Promise<{ profileImageUrl: string; profileImageExpiresAt: Date }> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { imageUrl: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Remove the old image before uploading the new one to avoid orphaned files
+    if (user.imageUrl) {
+      await this.s3.deleteObject(user.imageUrl);
+    }
+
+    // Upload new image — validateFile is called inside uploadProfileImage
+    const { key } = await this.s3.uploadProfileImage(userId, file);
+
+    // Persist the S3 key (not a URL — presigned on every read)
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { imageUrl: key },
+    });
+
+    // Return a presigned URL so the caller can display it right away
+    const { url, expiresAt } = await this.s3.getPresignedUrl(key);
+
+    this.logger.log(`Profile image updated for user: ${userId}`);
+
+    return { profileImageUrl: url, profileImageExpiresAt: expiresAt };
+  }
+
+  /**
+   * Changes the user's password.
+   *
+   * Security requirements enforced here:
+   * - currentPassword verified against the stored bcrypt hash (timing-safe compare).
+   * - confirmNewPassword must equal newPassword (cross-field check).
+   * - New password hashed at bcrypt cost 12.
+   * - All active refresh tokens revoked to force re-login on all devices.
+   */
+  async changePassword(
+    userId: string,
+    dto: ChangePasswordDto,
+  ): Promise<{ success: boolean; message: string }> {
+    // Cross-field validation — class-validator can't do this declaratively
+    if (dto.newPassword !== dto.confirmNewPassword) {
+      throw new BadRequestException(
+        'New password and confirmation do not match',
+      );
+    }
+
+    // Fetch the stored hash — we need it to verify the current password
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { passwordHash: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Verify the current password — bcrypt.compare is timing-safe
+    const isCurrentPasswordValid = await bcrypt.compare(
+      dto.currentPassword,
+      user.passwordHash,
+    );
+
+    if (!isCurrentPasswordValid) {
+      throw new UnauthorizedException('Current password is incorrect');
+    }
+
+    // Prevent re-use of the current password
+    const isSamePassword = await bcrypt.compare(
+      dto.newPassword,
+      user.passwordHash,
+    );
+
+    if (isSamePassword) {
+      throw new BadRequestException(
+        'New password must be different from the current password',
+      );
+    }
+
+    // Hash the new password at bcrypt cost 12
+    const newPasswordHash = await bcrypt.hash(
+      dto.newPassword,
+      this.BCRYPT_ROUNDS,
+    );
+
+    // Update password and revoke all refresh tokens in a single transaction
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: userId },
+        data: { passwordHash: newPasswordHash },
+      }),
+      // Revoke all active refresh tokens — forces re-login on all devices
+      this.prisma.refreshToken.updateMany({
+        where: { userId, revoked: false },
+        data: { revoked: true },
+      }),
+    ]);
+
+    this.logger.log(
+      `Password changed and all refresh tokens revoked for user: ${userId}`,
+    );
+
+    return {
+      success: true,
+      message:
+        'Password changed successfully. You have been signed out of all other devices.',
+    };
   }
 }
