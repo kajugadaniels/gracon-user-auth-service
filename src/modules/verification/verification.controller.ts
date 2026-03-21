@@ -19,6 +19,10 @@ import { verificationUploadConfig } from '../../common/aws/s3/multer.config';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RequireTokenType } from '../../common/decorators/token-type.decorator';
+import {
+  ThrottleStrict,
+  SkipThrottle,
+} from '../../common/decorators/throttle.decorator';
 
 interface UploadedVerificationFiles {
   idCard?: Express.Multer.File[];
@@ -27,19 +31,18 @@ interface UploadedVerificationFiles {
 
 @Controller('verification')
 @UseGuards(JwtAuthGuard)
-// Both limited and full tokens can reach verification endpoints
-// A user with a limited token must complete ID verification before
-// they can get a full token and access other protected routes
-@RequireTokenType('any')
+@RequireTokenType('any') // limited and full tokens both accepted here
 export class VerificationController {
   constructor(private readonly verificationService: VerificationService) {}
 
   /**
    * POST /api/v1/verification/submit
-   * Accepts: multipart/form-data with idCard, selfie, documentNumber
-   * Accessible with limited token (post-email-verify, pre-ID-verify)
+   * Strict limit: 3 per 10 minutes per IP.
+   * Each submission calls AWS Rekognition — has a real cost.
+   * Also mirrors the business rule of max 3 attempts per day.
    */
   @Post('submit')
+  @ThrottleStrict()
   @HttpCode(HttpStatus.OK)
   @UseInterceptors(
     FileFieldsInterceptor(
@@ -59,7 +62,6 @@ export class VerificationController {
     if (!files?.idCard?.[0]) {
       throw new BadRequestException('ID card image is required.');
     }
-
     if (!files?.selfie?.[0]) {
       throw new BadRequestException('Selfie image is required.');
     }
@@ -80,10 +82,12 @@ export class VerificationController {
 
   /**
    * GET /api/v1/verification/status
-   * Returns current verification status.
-   * Accessible with limited token — frontend needs this to show correct UI.
+   * Skip throttle — this is a lightweight read used by the frontend
+   * on every page load of the verify-identity page. Throttling it
+   * would cause UX issues without any security benefit.
    */
   @Get('status')
+  @SkipThrottle()
   @HttpCode(HttpStatus.OK)
   async getStatus(@CurrentUser() userId: string) {
     return this.verificationService.getVerificationStatus(userId);
