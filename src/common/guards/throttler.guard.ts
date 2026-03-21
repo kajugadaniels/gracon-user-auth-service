@@ -15,6 +15,7 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
    * Without this, all requests behind a proxy look like they come
    * from the same IP and would be rate-limited together.
    */
+  // eslint-disable-next-line @typescript-eslint/require-await
   protected async getTracker(req: Request): Promise<string> {
     const forwarded = req.headers['x-forwarded-for'];
 
@@ -37,8 +38,9 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
     throw new ThrottlerException(
       JSON.stringify({
         statusCode: 429,
-        error:      'Too Many Requests',
-        message:    'You have made too many requests. Please wait before trying again.',
+        error: 'Too Many Requests',
+        message:
+          'You have made too many requests. Please wait before trying again.',
       }),
     );
   }
