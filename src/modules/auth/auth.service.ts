@@ -24,15 +24,10 @@ import {
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
 
-  // Access token — short lived, used for API requests
   private readonly ACCESS_TOKEN_EXPIRY = '15m';
-
-  // Refresh token — longer lived, used only to get new access tokens
+  private readonly LIMITED_ACCESS_TOKEN_EXPIRY = '2h'; // enough to complete ID verify
   private readonly REFRESH_TOKEN_EXPIRY = '30d';
   private readonly REFRESH_TOKEN_EXPIRY_MS = 30 * 24 * 60 * 60 * 1000;
-
-  // bcrypt cost for comparing passwords — same as registration
-  // bcrypt.compare handles this automatically, just needs the hash
 
   constructor(
     private readonly prisma: PrismaService,
@@ -44,20 +39,6 @@ export class AuthService {
 
   // ─── Login ────────────────────────────────────────────────────────────────
 
-  /**
-   * Authenticates a user and issues access + refresh tokens.
-   *
-   * Gate checks in order:
-   * 1. User exists (vague error — prevents user enumeration)
-   * 2. Password matches bcrypt hash
-   * 3. Email verified (isVerified = true)
-   * 4. Account active (isActive = true)
-   * 5. ID face verification passed (isIdVerified = true)
-   *
-   * All credential failures return the same vague message —
-   * an attacker cannot determine whether the email exists or
-   * the password was wrong.
-   */
   async login(
     dto: LoginDto,
     ipAddress: string,
@@ -66,17 +47,14 @@ export class AuthService {
     // ── Gate 1 + 2: Find user and verify password
     const user = await this.usersService.findByEmail(dto.email);
 
-    // Constant-time password comparison even if user not found
-    // We run bcrypt.compare against a dummy hash to prevent timing attacks
-    // that would reveal whether the email is registered
     const DUMMY_HASH =
       '$2b$12$invalidhashfortimingprotectiononly000000000000000000000';
-
-    const passwordToCompare = user?.passwordHash ?? DUMMY_HASH;
-    const passwordValid = await bcrypt.compare(dto.password, passwordToCompare);
+    const passwordValid = await bcrypt.compare(
+      dto.password,
+      user?.passwordHash ?? DUMMY_HASH,
+    );
 
     if (!user || !passwordValid) {
-      // Vague message — never reveal which field was wrong
       throw new UnauthorizedException('Invalid email or password');
     }
 
@@ -94,30 +72,50 @@ export class AuthService {
       );
     }
 
-    // ── Gate 5: ID verification must be complete
-    // This is the final gate — user must have passed face + document check
+    // ── Gate 5: ID verification check
+    // Instead of blocking — issue a limited token so user can reach verify-identity
     if (!user.isIdVerified) {
-      throw new ForbiddenException(
-        'Identity verification required. Please complete the ID face verification step before logging in.',
+      const limitedTokens = await this.generateTokens(
+        user.id,
+        user.email,
+        ipAddress,
+        userAgent,
+        'limited', // restricted token type
       );
+
+      const profile = await this.buildSafeProfile(user);
+
+      this.logger.log(`Limited token issued for unverified user: ${user.id}`);
+
+      return {
+        success: true,
+        // Clear message — frontend uses this to redirect
+        message: 'Please complete your identity verification to continue.',
+        tokenType: 'limited',
+        data: {
+          accessToken: limitedTokens.accessToken,
+          refreshToken: limitedTokens.refreshToken,
+          user: profile,
+        },
+      };
     }
 
-    // ── All gates passed — issue tokens
+    // ── All gates passed — issue full token
     const tokens = await this.generateTokens(
       user.id,
       user.email,
       ipAddress,
       userAgent,
+      'full',
     );
 
-    // Build safe profile — no sensitive fields
     const profile = await this.buildSafeProfile(user);
-
-    this.logger.log(`Login successful: ${user.id}`);
+    this.logger.log(`Full login successful: ${user.id}`);
 
     return {
       success: true,
       message: 'Login successful',
+      tokenType: 'full',
       data: {
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,
@@ -128,24 +126,13 @@ export class AuthService {
 
   // ─── Refresh Token ────────────────────────────────────────────────────────
 
-  /**
-   * Issues a new access token using a valid refresh token.
-   * Implements token rotation — old refresh token is revoked,
-   * new refresh token is issued alongside the new access token.
-   *
-   * This means a stolen refresh token can only be used once —
-   * after rotation the original is invalid.
-   */
   async refreshTokens(
     dto: RefreshTokenDto,
     ipAddress: string,
     userAgent: string,
   ): Promise<AuthTokens> {
-    // Hash the provided refresh token for DB lookup
     const tokenHash = this.encryption.hash(dto.refreshToken);
 
-    // Find the stored token record
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
     const storedToken = await this.prisma.refreshToken.findUnique({
       where: { tokenHash },
       include: {
@@ -160,78 +147,93 @@ export class AuthService {
       },
     });
 
-    // Token not found — invalid or already rotated
     if (!storedToken) {
       throw new UnauthorizedException('Invalid refresh token');
     }
 
-    // Token was revoked (logout or previous rotation)
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     if (storedToken.revoked) {
-      // Revoke ALL tokens for this user — possible token theft
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
       await this.revokeAllUserTokens(storedToken.userId);
       this.logger.warn(
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-        `Revoked refresh token reuse detected for user: ${storedToken.userId}`,
+        `Revoked token reuse detected for user: ${storedToken.userId}`,
       );
       throw new UnauthorizedException(
         'Refresh token has been revoked. Please log in again.',
       );
     }
 
-    // Token expired
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     if (new Date() > storedToken.expiresAt) {
       throw new UnauthorizedException(
         'Refresh token has expired. Please log in again.',
       );
     }
 
-    // Account checks — state may have changed since token was issued
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     if (!storedToken.user.isActive) {
       throw new UnauthorizedException(
         'Account is not active. Please contact support.',
       );
     }
 
-    // ── Rotate: revoke old token, issue new pair
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+    // Revoke old, issue new — preserve token type
     await this.prisma.refreshToken.update({
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
       where: { id: storedToken.id },
       data: { revoked: true },
     });
 
+    const tokenType = (storedToken.tokenType as 'full' | 'limited') ?? 'full';
+
     const newTokens = await this.generateTokens(
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
       storedToken.user.id,
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
       storedToken.user.email,
       ipAddress,
       userAgent,
+      tokenType,
     );
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     this.logger.log(`Token rotated for user: ${storedToken.userId}`);
-
     return newTokens;
+  }
+
+  // ─── Upgrade limited → full token after ID verification ──────────────────
+
+  /**
+   * Called by VerificationService after a successful ID verification.
+   * Revokes the limited token and issues a full access token.
+   */
+  async upgradeToken(
+    userId: string,
+    ipAddress: string,
+    userAgent: string,
+  ): Promise<AuthTokens> {
+    // Revoke all existing limited tokens for this user
+    await this.prisma.refreshToken.updateMany({
+      where: { userId, tokenType: 'limited', revoked: false },
+      data: { revoked: true },
+    });
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true },
+    });
+
+    const tokens = await this.generateTokens(
+      user.id,
+      user.email,
+      ipAddress,
+      userAgent,
+      'full',
+    );
+
+    this.logger.log(`Token upgraded to full for user: ${userId}`);
+    return tokens;
   }
 
   // ─── Logout ───────────────────────────────────────────────────────────────
 
-  /**
-   * Revokes the provided refresh token.
-   * Access token expiry is handled naturally (15 min TTL).
-   * Frontend should delete the access token from memory on logout.
-   */
   async logout(
     refreshToken: string,
   ): Promise<{ success: boolean; message: string }> {
     const tokenHash = this.encryption.hash(refreshToken);
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
     await this.prisma.refreshToken.updateMany({
       where: { tokenHash, revoked: false },
       data: { revoked: true },
@@ -240,10 +242,6 @@ export class AuthService {
     return { success: true, message: 'Logged out successfully' };
   }
 
-  /**
-   * Logs the user out of all devices by revoking all refresh tokens.
-   * Useful for security incidents or password changes.
-   */
   async logoutAllDevices(
     userId: string,
   ): Promise<{ success: boolean; message: string }> {
@@ -254,54 +252,49 @@ export class AuthService {
 
   // ─── Private helpers ──────────────────────────────────────────────────────
 
-  /**
-   * Generates an access token + refresh token pair.
-   * Access token is a signed JWT — stateless, short lived.
-   * Refresh token is a random hex string — hash stored in DB.
-   */
   private async generateTokens(
     userId: string,
     email: string,
     ipAddress: string,
     userAgent: string,
+    tokenType: 'full' | 'limited' = 'full',
   ): Promise<AuthTokens> {
-    const payload: JwtPayload = { sub: userId, email };
+    const payload: JwtPayload = { sub: userId, email, tokenType };
 
-    // Sign the JWT access token
+    const expiry =
+      tokenType === 'limited'
+        ? this.LIMITED_ACCESS_TOKEN_EXPIRY
+        : this.ACCESS_TOKEN_EXPIRY;
+
     const accessToken = this.jwtService.sign(payload, {
-      expiresIn: this.ACCESS_TOKEN_EXPIRY,
+      expiresIn: expiry,
       secret: this.config.get<string>('JWT_SECRET'),
     });
 
-    // Generate cryptographically random refresh token
-    const rawRefreshToken = crypto.randomBytes(40).toString('hex'); // 80-char hex
+    const rawRefreshToken = crypto.randomBytes(40).toString('hex');
     const refreshTokenHash = this.encryption.hash(rawRefreshToken);
     const expiresAt = new Date(Date.now() + this.REFRESH_TOKEN_EXPIRY_MS);
 
-    // Store hashed refresh token in DB
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
     await this.prisma.refreshToken.create({
       data: {
         userId,
         tokenHash: refreshTokenHash,
+        tokenType,
         expiresAt,
         ipAddress,
-        userAgent: userAgent?.substring(0, 512), // truncate long user-agent strings
+        userAgent: userAgent?.substring(0, 512),
       },
     });
 
     return {
       accessToken,
-      refreshToken: rawRefreshToken, // raw token sent to client — only time it's available
+      refreshToken: rawRefreshToken,
+      tokenType,
     };
   }
 
-  /**
-   * Builds a safe user profile for the login response.
-   * Decrypts PID only if needed for display — otherwise never decrypts.
-   */
   private buildSafeProfile(
-    user: NonNullable<Awaited<ReturnType<UsersService['findByEmail']>>>,
+    user: Awaited<ReturnType<UsersService['findByEmail']>>,
   ): SafeUserProfile {
     return {
       userId: user.id,
@@ -312,19 +305,12 @@ export class AuthService {
       postNames: user.citizenIdentity?.postNames ?? '',
       sex: user.citizenIdentity?.sex ?? '',
       isIdVerified: user.isIdVerified,
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       idVerifiedAt: user.idVerifiedAt ?? null,
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       createdAt: user.createdAt,
     };
   }
 
-  /**
-   * Revokes all active refresh tokens for a user.
-   * Called on suspicious token reuse or explicit logout-all.
-   */
   private async revokeAllUserTokens(userId: string): Promise<void> {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
     await this.prisma.refreshToken.updateMany({
       where: { userId, revoked: false },
       data: { revoked: true },
