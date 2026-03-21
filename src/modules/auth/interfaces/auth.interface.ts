@@ -4,6 +4,7 @@
 export interface JwtPayload {
   sub: string; // userId — standard JWT subject claim
   email: string;
+  tokenType: 'full' | 'limited'; // "full" = all routes, "limited" = verify-identity only
   iat?: number; // issued at — added automatically by @nestjs/jwt
   exp?: number; // expiry — added automatically
 }
@@ -11,11 +12,13 @@ export interface JwtPayload {
 export interface AuthTokens {
   accessToken: string;
   refreshToken: string;
+  tokenType: 'full' | 'limited'; // Tells the frontend which flow to enter
 }
 
 export interface LoginResult {
   success: boolean;
   message: string;
+  tokenType: 'full' | 'limited';
   data: {
     accessToken: string;
     refreshToken: string;
