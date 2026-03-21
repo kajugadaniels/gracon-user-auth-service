@@ -3,44 +3,181 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Welcome</title>
+  <meta name="color-scheme" content="light">
+  <meta name="supported-color-schemes" content="light">
+  <title>Account Activated — ID Verification Platform</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet">
   <style>
-    body { margin: 0; padding: 0; background: #f4f6f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
-    .wrapper { max-width: 560px; margin: 40px auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
-    .header { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); padding: 36px 40px; text-align: center; }
-    .header h1 { color: #ffffff; font-size: 22px; font-weight: 600; margin: 0; }
-    .header p { color: rgba(255,255,255,0.65); font-size: 13px; margin: 6px 0 0; }
-    .body { padding: 40px; }
-    .greeting { font-size: 16px; color: #1a1a2e; font-weight: 500; margin-bottom: 12px; }
-    .text { font-size: 14px; color: #555e6d; line-height: 1.7; margin-bottom: 24px; }
-    .pid-box { background: #f8f7ff; border: 1px solid #e0e0ff; border-radius: 8px; padding: 16px 20px; margin-bottom: 28px; }
-    .pid-label { font-size: 11px; font-weight: 600; color: #7c3aed; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px; }
-    .pid-value { font-size: 22px; font-weight: 700; color: #1a1a2e; letter-spacing: 3px; font-family: monospace; }
-    .btn { display: block; width: fit-content; margin: 0 auto 28px; padding: 14px 36px; background: linear-gradient(135deg, #4f46e5, #7c3aed); color: #ffffff; text-decoration: none; border-radius: 8px; font-size: 15px; font-weight: 600; }
-    .footer { background: #f8f9fb; padding: 20px 40px; text-align: center; font-size: 12px; color: #9ca3af; }
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #ede9ff;
+      font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+    }
+    .wrapper { padding: 48px 20px; }
+    .card {
+      max-width: 580px;
+      margin: 0 auto;
+      background: #ffffff;
+      border-radius: 20px;
+      overflow: hidden;
+      box-shadow: 0 4px 32px rgba(91,35,255,0.13), 0 1px 4px rgba(0,0,0,0.06);
+    }
+    .header {
+      background-color: #5B23FF;
+      padding: 44px 48px 40px;
+      text-align: center;
+    }
+    .brand-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: rgba(255,255,255,0.52);
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin: 0 0 22px;
+    }
+    .header h1 {
+      color: #ffffff;
+      font-size: 26px;
+      font-weight: 700;
+      margin: 18px 0 8px;
+      letter-spacing: -0.4px;
+    }
+    .header-sub {
+      color: rgba(255,255,255,0.70);
+      font-size: 14px;
+      margin: 0;
+    }
+    .body { padding: 44px 48px 40px; }
+    .greeting {
+      font-size: 18px;
+      font-weight: 600;
+      color: #16103a;
+      margin: 0 0 14px;
+    }
+    .text {
+      font-size: 15px;
+      color: #5a5380;
+      line-height: 1.75;
+      margin: 0 0 32px;
+    }
+    .id-box {
+      background: rgba(91,35,255,0.05);
+      border: 1.5px solid rgba(91,35,255,0.20);
+      border-radius: 14px;
+      padding: 22px 26px;
+      margin: 0 0 36px;
+    }
+    .id-label {
+      font-size: 11px;
+      font-weight: 700;
+      color: #5B23FF;
+      text-transform: uppercase;
+      letter-spacing: 1.4px;
+      margin: 0 0 10px;
+    }
+    .id-value {
+      font-size: 28px;
+      font-weight: 700;
+      color: #16103a;
+      letter-spacing: 5px;
+      font-family: 'SF Mono', 'Fira Code', 'Menlo', 'Courier New', monospace;
+      margin: 0 0 8px;
+    }
+    .id-note {
+      font-size: 12px;
+      color: #9590b0;
+      margin: 0;
+    }
+    .divider {
+      border: none;
+      border-top: 1px solid #ede9ff;
+      margin: 0 0 28px;
+    }
+    .footer {
+      background: #f5f3ff;
+      border-top: 1px solid #ede9ff;
+      padding: 24px 48px;
+      text-align: center;
+    }
+    .footer p {
+      font-size: 12px;
+      color: #9590b0;
+      margin: 0 0 4px;
+      line-height: 1.65;
+    }
+    .footer p:last-child { margin: 0; }
   </style>
 </head>
 <body>
+  <!-- Preheader -->
+  <div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;">
+    Your account is now active. Here is your Platform ID — keep it safe.
+  </div>
+
   <div class="wrapper">
-    <div class="header">
-      <h1>Account Activated</h1>
-      <p>Your identity has been verified</p>
-    </div>
-    <div class="body">
-      <p class="greeting">Welcome, {{postNames}} {{surName}}!</p>
-      <p class="text">
-        Your email has been verified and your account is now fully active.
-        Your Platform ID is shown below — keep it safe, you may need it
-        to recover your account.
-      </p>
-      <div class="pid-box">
-        <div class="pid-label">Your Platform ID</div>
-        <div class="pid-value">{{platformId}}</div>
+    <div class="card">
+
+      <!-- Header -->
+      <div class="header">
+        <p class="brand-label">ID Verification Platform</p>
+        <table role="presentation" cellpadding="0" cellspacing="0" style="margin: 0 auto;">
+          <tr>
+            <td width="72" height="72" align="center" valign="middle"
+                style="width:72px;height:72px;background:rgba(255,255,255,0.15);border:1.5px solid rgba(255,255,255,0.28);border-radius:36px;">
+              <svg width="30" height="30" viewBox="0 0 30 30" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M15 2.5L4 7.5V15c0 7.5 11 12.5 11 12.5S26 22.5 26 15V7.5L15 2.5z"
+                      fill="rgba(255,255,255,0.2)" stroke="white" stroke-width="1.5" stroke-linejoin="round"/>
+                <path d="M10 15l4 4 7-7" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </td>
+          </tr>
+        </table>
+        <h1>Account Activated</h1>
+        <p class="header-sub">Your identity has been verified successfully</p>
       </div>
-      <a href="{{loginUrl}}" class="btn">Go to Login</a>
-    </div>
-    <div class="footer">
-      &copy; {{currentYear}} ID Verification Platform. All rights reserved.
+
+      <!-- Body -->
+      <div class="body">
+        <p class="greeting">Welcome, {{postNames}} {{surName}}!</p>
+        <p class="text">
+          Great news — your email has been verified and your account is now fully active.
+          Your unique Platform ID is shown below. Store it somewhere safe, as you may
+          need it to recover your account in the future.
+        </p>
+
+        <div class="id-box">
+          <p class="id-label">Your Platform ID</p>
+          <p class="id-value">{{platformId}}</p>
+          <p class="id-note">Keep this confidential. Never share it with anyone.</p>
+        </div>
+
+        <table role="presentation" cellpadding="0" cellspacing="0" style="margin: 0 auto 36px;">
+          <tr>
+            <td align="center"
+                style="border-radius:10px;background-color:#5B23FF;box-shadow:0 4px 18px rgba(91,35,255,0.36);">
+              <a href="{{loginUrl}}" target="_blank"
+                 style="display:inline-block;padding:15px 48px;color:#ffffff;font-size:15px;font-weight:600;text-decoration:none;letter-spacing:0.2px;font-family:'DM Sans',-apple-system,sans-serif;border-radius:10px;">
+                Access Your Account
+              </a>
+            </td>
+          </tr>
+        </table>
+
+        <hr class="divider" />
+
+        <p style="font-size:13px;color:#9590b0;text-align:center;margin:0;line-height:1.65;">
+          If you did not create this account, please contact our support team immediately.
+        </p>
+      </div>
+
+      <!-- Footer -->
+      <div class="footer">
+        <p>&copy; {{currentYear}} ID Verification Platform. All rights reserved.</p>
+        <p>You received this email because an account was created with your email address.</p>
+      </div>
+
     </div>
   </div>
 </body>
