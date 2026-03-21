@@ -32,6 +32,7 @@ model User {
 
   @@map("users")
   refreshTokens RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
 }
 
 // ─── Citizen Identities ───────────────────────────────────────────────────────
@@ -121,4 +122,21 @@ model RefreshToken {
 
   @@index([userId])
   @@map("refresh_tokens")
+}
+
+// ─── Password Reset Tokens ────────────────────────────────────────────────────
+// Short-lived tokens sent via email for password reset
+// Raw token only exists in the email — hash stored in DB
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  userId    String
+  tokenHash String   @unique          // SHA-256 hash of the raw token
+  expiresAt DateTime                  // 1 hour from creation
+  used      Boolean  @default(false)  // true after successful reset
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_reset_tokens")
 }
