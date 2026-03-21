@@ -17,6 +17,8 @@ import {
   EngineUnavailableException,
   ImageUploadFailedException,
 } from './exceptions/verification.exceptions';
+import { AuthService } from '../auth/auth.service';
+import { AuthTokens } from '../auth/interfaces/auth.interface';
 
 // Max attempts allowed within the retry window
 const MAX_ATTEMPTS = 3;
@@ -39,6 +41,7 @@ export class VerificationService {
     private readonly s3: S3Service,
     private readonly httpService: HttpService,
     private readonly config: ConfigService,
+    private readonly authService: AuthService,
   ) {
     const engineUrl = this.config.get<string>('ENGINE_URL');
     const engineApiKey = this.config.get<string>('ENGINE_API_KEY');
@@ -177,17 +180,24 @@ export class VerificationService {
     await this.cleanupImages(idCardKey, selfieKey);
 
     // ── Step 6: Activate ID verification if passed
+    let upgradedTokens: AuthTokens | undefined;
+
     if (engineResponse.passed) {
       await this.prisma.user.update({
         where: { id: userId },
         data: {
           isIdVerified: true,
           idVerifiedAt: new Date(),
-          verificationAttempts: {
-            increment: 1,
-          },
+          verificationAttempts: { increment: 1 },
         },
       });
+
+      // Upgrade the user's limited token to a full token
+      upgradedTokens = await this.authService.upgradeToken(
+        userId,
+        ipAddress,
+        'id-verification-upgrade',
+      );
 
       this.logger.log(`ID verification passed for user: ${userId}`);
     } else {
@@ -223,6 +233,7 @@ export class VerificationService {
       failReason: engineResponse.fail_reason,
       attemptsUsed,
       attemptsRemaining,
+      upgradedTokens,
     };
   }
 
