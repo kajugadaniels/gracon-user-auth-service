@@ -9,30 +9,23 @@ import { UsersModule } from '../users/users.module';
 
 @Module({
   imports: [
-    // Register Passport with JWT as the default strategy
     PassportModule.register({ defaultStrategy: 'jwt' }),
-
-    // Configure JWT module — secret pulled from .env at runtime
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
         secret: config.get<string>('JWT_SECRET'),
         signOptions: {
-          expiresIn: '15m', // access token TTL
-          issuer: 'id-verification-gateway', // identifies token source
-          audience: 'id-verification-client', // identifies intended recipient
+          expiresIn: '15m',
+          issuer: 'id-verification-gateway',
+          audience: 'id-verification-client',
         },
       }),
     }),
-
-    UsersModule, // provides UsersService for findByEmail and findById
+    UsersModule,
   ],
   controllers: [AuthController],
-  providers: [
-    AuthService,
-    JwtStrategy, // registered with Passport automatically
-  ],
-  exports: [AuthService, JwtStrategy, PassportModule],
+  providers: [AuthService, JwtStrategy],
+  exports: [AuthService, JwtStrategy, PassportModule], // AuthService exported
 })
 export class AuthModule {}
