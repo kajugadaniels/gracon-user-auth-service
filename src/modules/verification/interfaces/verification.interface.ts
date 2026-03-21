@@ -28,4 +28,9 @@ export interface VerificationResult {
   failReason: string | null;
   attemptsUsed: number;
   attemptsRemaining: number;
+  // Provided when passed=true — replaces the limited token
+  upgradedTokens?: {
+    accessToken: string;
+    refreshToken: string;
+  };
 }
