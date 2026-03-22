@@ -19,6 +19,7 @@ import {
   LoginResult,
   SafeUserProfile,
 } from './interfaces/auth.interface';
+import { SecurityEventService } from 'src/common/security/security-event.service';
 
 @Injectable()
 export class AuthService {
@@ -35,6 +36,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly encryption: EncryptionService,
     private readonly config: ConfigService,
+    private readonly secEvent: SecurityEventService,
   ) {}
 
   // ─── Login ────────────────────────────────────────────────────────────────
@@ -55,8 +57,20 @@ export class AuthService {
     );
 
     if (!user || !passwordValid) {
+      // Fire-and-forget — do not await, never block the response
+      void this.secEvent.logLoginFailed({
+        userId: user?.id,
+        ipAddress,
+        metadata: { email: dto.email, reason: 'invalid_credentials' },
+      });
       throw new UnauthorizedException('Invalid email or password');
     }
+
+    void this.secEvent.logLoginSuccess({
+      userId: user.id,
+      ipAddress,
+      metadata: { tokenType: 'full' },
+    });
 
     // ── Gate 3: Email must be verified
     if (!user.isVerified) {
@@ -153,13 +167,19 @@ export class AuthService {
 
     if (storedToken.revoked) {
       await this.revokeAllUserTokens(storedToken.userId);
-      this.logger.warn(
-        `Revoked token reuse detected for user: ${storedToken.userId}`,
-      );
-      throw new UnauthorizedException(
-        'Refresh token has been revoked. Please log in again.',
-      );
+      void this.secEvent.logRevokedTokenReuse({
+        userId: storedToken.userId,
+        ipAddress,
+        metadata: { tokenHash: 'redacted' },
+      });
+      throw new UnauthorizedException('Refresh token has been revoked...');
     }
+
+    // In logoutAllDevices():
+    void this.secEvent.logSessionsRevokedByUser({
+      userId,
+      metadata: { trigger: 'user_requested' },
+    });
 
     if (new Date() > storedToken.expiresAt) {
       throw new UnauthorizedException(
