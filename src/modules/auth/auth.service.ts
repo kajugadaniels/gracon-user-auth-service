@@ -175,12 +175,6 @@ export class AuthService {
       throw new UnauthorizedException('Refresh token has been revoked...');
     }
 
-    // In logoutAllDevices():
-    void this.secEvent.logSessionsRevokedByUser({
-      userId,
-      metadata: { trigger: 'user_requested' },
-    });
-
     if (new Date() > storedToken.expiresAt) {
       throw new UnauthorizedException(
         'Refresh token has expired. Please log in again.',
@@ -268,6 +262,10 @@ export class AuthService {
     userId: string,
   ): Promise<{ success: boolean; message: string }> {
     await this.revokeAllUserTokens(userId);
+    void this.secEvent.logSessionsRevokedByUser({
+      userId,
+      metadata: { trigger: 'user_requested' },
+    });
     this.logger.log(`All tokens revoked for user: ${userId}`);
     return { success: true, message: 'Logged out from all devices' };
   }
