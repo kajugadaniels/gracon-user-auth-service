@@ -21,6 +21,7 @@ import { ResendVerificationDto } from './dto/resend-verification.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { RegistrationResult } from './interfaces/registration-result.interface';
+import { SecurityEventService } from 'src/common/security/security-event.service';
 
 @Injectable()
 export class UsersService {
@@ -43,6 +44,7 @@ export class UsersService {
     private readonly pidService: PidService,
     private readonly citizenService: CitizenService,
     private readonly mailer: AppMailerService,
+    private readonly secEvent: SecurityEventService,
   ) {}
 
   // ─── Registration ─────────────────────────────────────────────────────────
@@ -692,6 +694,12 @@ export class UsersService {
         'New password must be different from the current password',
       );
     }
+
+    // In changePassword() — after the DB update succeeds:
+    void this.secEvent.logPasswordChanged({
+      userId,
+      metadata: { trigger: 'user_change_password' },
+    });
 
     // Hash the new password at bcrypt cost 12
     const newPasswordHash = await bcrypt.hash(
