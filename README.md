@@ -1,98 +1,166 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Auth Service
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+> Part of the ID Verification Platform microservice architecture.
+> Handles all user-facing authentication, registration, and identity
+> verification flows.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+---
 
-## Description
+## What This Service Does
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+This service is the primary gateway between the user-facing application
+and the platform's data layer. It is responsible for:
 
-## Project setup
+- **User registration with National ID** — validates a citizen's identity
+  against the national registry API before creating an account
+- **Email verification** — issues time-limited tokens, confirms ownership
+  of the registered email address before activating the account
+- **AI-powered ID face verification** — orchestrates the full biometric
+  verification flow: captures ID card photo and selfie, sends them to the
+  AI engine for face comparison and liveness detection, stores the audit
+  result, and upgrades the user's access token upon passing
+- **JWT authentication** — issues short-lived access tokens (15 min) and
+  long-lived refresh tokens (30 days) with full rotation support
+- **Password management** — bcrypt-hashed storage, secure reset flow via
+  email with 1-hour expiring tokens, password change with session revocation
+- **Profile management** — profile updates, profile image upload to AWS S3
+  with presigned URL serving
 
-```bash
-$ npm install
+This service does **not** handle admin operations. Those are handled by
+the Admin Service (`api/admin/`).
+
+---
+
+## Architecture Position
+```
+app/app (Next.js)
+      │
+      ▼
+api/auth (this service — port 3000)
+      │                    │
+      ▼                    ▼
+Neon Postgres         engine/ (FastAPI — port 8000)
+                      AWS Rekognition
+                      AWS S3
 ```
 
-## Compile and run the project
+The user frontend communicates exclusively with this service.
+This service communicates with the AI engine for verification,
+AWS S3 for image storage, and Neon Postgres for all persistent data.
 
+---
+
+## Key Security Properties
+
+- National ID numbers (NIDs) are **AES-256-CBC encrypted** before storage
+  and never returned in plain text in any API response
+- Platform IDs (PIDs) follow the same encryption scheme
+- Passwords are **bcrypt hashed** with 12 rounds — never stored plain
+- Refresh tokens are stored as **SHA-256 hashes** — the raw token only
+  exists in the HTTP response at issuance time
+- Verification images are **never stored permanently** — uploaded to S3
+  temporarily, passed to Rekognition, deleted immediately after scoring
+- All sensitive endpoints are **rate limited** — login and registration
+  allow 5 attempts per minute, verification and password changes allow
+  3 attempts per 10 minutes
+- API documentation (`/docs`, `/redoc`) is protected by **basic auth**
+  in production and disabled from public access
+
+---
+
+## Token System
+
+This service issues two token types:
+
+| Type | Expiry | Purpose |
+|---|---|---|
+| `full` | 15 minutes | Full access — all protected routes |
+| `limited` | 2 hours | Issued after email verification, before ID verification — only reaches `/verification/*` routes |
+
+After a user passes ID verification, the limited token is automatically
+upgraded to a full token without requiring a second login.
+
+---
+
+## Tech Stack
+
+| Concern | Technology |
+|---|---|
+| Framework | NestJS (TypeScript) |
+| Database ORM | Prisma |
+| Database | Neon Postgres (PostgreSQL) |
+| Authentication | Passport.js + JWT |
+| Image storage | AWS S3 |
+| AI verification | AWS Rekognition via FastAPI engine |
+| Email | Nodemailer + Handlebars templates |
+| Validation | class-validator + class-transformer |
+| Rate limiting | @nestjs/throttler |
+| Security headers | helmet |
+| API docs | Swagger / OpenAPI |
+
+---
+
+## Environment Variables
+
+Copy `.env.example` to `.env` and fill in all values before running.
 ```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+cp .env.example .env
 ```
 
-## Run tests
+See `.env.example` for the full list with generation instructions for
+secrets.
 
+---
+
+## Running Locally
 ```bash
-# unit tests
-$ npm run test
+# Install dependencies
+npm install
 
-# e2e tests
-$ npm run test:e2e
+# Generate Prisma client
+npx prisma generate
 
-# test coverage
-$ npm run test:cov
+# Run database migrations (only this service runs migrations)
+npx prisma migrate dev
+
+# Start in development mode (hot reload)
+npm run start:dev
+
+# Start in production mode
+npm run start:prod
 ```
 
-## Deployment
+Service will be available at: `http://localhost:3000/api/v1`
+API documentation: `http://localhost:3000/docs`
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+---
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
+## Running in Production
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+npm run build
+node dist/main.js
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+In production:
+- Set `APP_ENV=production` in `.env`
+- Set `DOCS_BASIC_AUTH_USER` and `DOCS_BASIC_AUTH_PASS` to protect `/docs`
+- Ensure `FRONTEND_URL` matches the deployed user app URL exactly
 
-## Resources
+---
 
-Check out a few resources that may come in handy when working with NestJS:
+## Related Services
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+| Service | Location | Purpose |
+|---|---|---|
+| Admin Service | `api/admin/` | Admin operations, user management |
+| AI Engine | `engine/` | Face comparison, liveness detection |
+| User App | `app/app/` | User-facing Next.js frontend |
+| Admin App | `app/admin/` | Admin Next.js dashboard |
+```
 
-## Support
+---
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+**Git command for the README:**
+```
+git add "api/auth/README.md"
+git commit -m "docs(auth): add professional README explaining auth service purpose, architecture, and setup"
