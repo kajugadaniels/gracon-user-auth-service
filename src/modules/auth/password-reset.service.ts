@@ -5,13 +5,14 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import * as bcrypt       from 'crypto';
-import * as bCrypt       from 'bcrypt';
-import { PrismaService }    from '../../common/prisma/prisma.service';
+import * as bcrypt from 'crypto';
+import * as bCrypt from 'bcrypt';
+import { PrismaService } from '../../common/prisma/prisma.service';
 import { EncryptionService } from '../../common/crypto/encryption.service';
-import { AppMailerService }  from '../../common/mailer/mailer.service';
+import { AppMailerService } from '../../common/mailer/mailer.service';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
-import { ResetPasswordDto }  from './dto/reset-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
+import { SecurityEventService } from 'src/common/security/security-event.service';
 
 @Injectable()
 export class PasswordResetService {
@@ -24,10 +25,11 @@ export class PasswordResetService {
   private readonly BCRYPT_ROUNDS = 12;
 
   constructor(
-    private readonly prisma:      PrismaService,
-    private readonly encryption:  EncryptionService,
-    private readonly mailer:      AppMailerService,
-    private readonly config:      ConfigService,
+    private readonly prisma: PrismaService,
+    private readonly encryption: EncryptionService,
+    private readonly mailer: AppMailerService,
+    private readonly config: ConfigService,
+    private readonly secEvent: SecurityEventService,
   ) {}
 
   // ── Request password reset ────────────────────────────────────
@@ -52,11 +54,11 @@ export class PasswordResetService {
 
     // Look up the user quietly — no error thrown if not found
     const user = await this.prisma.user.findUnique({
-      where:   { email: dto.email },
+      where: { email: dto.email },
       select: {
-        id:          true,
-        email:       true,
-        isActive:    true,
+        id: true,
+        email: true,
+        isActive: true,
         citizenIdentity: {
           select: { surName: true, postNames: true },
         },
@@ -72,22 +74,22 @@ export class PasswordResetService {
     // Only one active reset token at a time
     await this.prisma.passwordResetToken.updateMany({
       where: { userId: user.id, used: false },
-      data:  { used: true },
+      data: { used: true },
     });
 
     // Generate cryptographically secure raw token
-    const rawToken   = bcrypt.randomBytes(32).toString('hex');
-    const tokenHash  = this.encryption.hash(rawToken);
-    const expiresAt  = new Date(Date.now() + this.TOKEN_EXPIRY_MS);
+    const rawToken = bcrypt.randomBytes(32).toString('hex');
+    const tokenHash = this.encryption.hash(rawToken);
+    const expiresAt = new Date(Date.now() + this.TOKEN_EXPIRY_MS);
 
     // Store hashed token — raw token only lives in the email
     try {
       await this.prisma.passwordResetToken.create({
         data: {
-          userId:    user.id,
+          userId: user.id,
           tokenHash,
           expiresAt,
-          used:      false,
+          used: false,
         },
       });
     } catch (error) {
@@ -102,11 +104,11 @@ export class PasswordResetService {
 
     // Send email — failure is logged but does not affect response
     await this.mailer.sendPasswordResetEmail({
-      to:        user.email,
-      surName:   user.citizenIdentity?.surName  ?? '',
+      to: user.email,
+      surName: user.citizenIdentity?.surName ?? '',
       postNames: user.citizenIdentity?.postNames ?? '',
-      userId:    user.id,
-      token:     rawToken,
+      userId: user.id,
+      token: rawToken,
     });
 
     this.logger.log(`Password reset requested for user: ${user.id}`);
@@ -122,7 +124,7 @@ export class PasswordResetService {
    */
   async validateResetToken(
     userId: string,
-    token:  string,
+    token: string,
   ): Promise<{ valid: boolean; message: string }> {
     const result = await this.findValidToken(userId, token);
 
@@ -131,7 +133,7 @@ export class PasswordResetService {
     }
 
     return {
-      valid:   true,
+      valid: true,
       message: 'Token is valid.',
     };
   }
@@ -171,20 +173,20 @@ export class PasswordResetService {
       // Update password
       await tx.user.update({
         where: { id: dto.userId },
-        data:  { passwordHash },
+        data: { passwordHash },
       });
 
       // Mark token as used — prevents replay attacks
       await tx.passwordResetToken.update({
-        where: { id: tokenLookup.record!.id },
-        data:  { used: true },
+        where: { id: tokenLookup.record.id },
+        data: { used: true },
       });
 
       // Revoke ALL refresh tokens — force re-login on all devices
       // This ensures old sessions cannot be used after a password change
       await tx.refreshToken.updateMany({
         where: { userId: dto.userId, revoked: false },
-        data:  { revoked: true },
+        data: { revoked: true },
       });
     });
 
@@ -209,19 +211,19 @@ export class PasswordResetService {
     userId: string,
     rawToken: string,
   ): Promise<
-    | { valid: true;  record: { id: string }; reason: null }
-    | { valid: false; record: null;           reason: string }
+    | { valid: true; record: { id: string }; reason: null }
+    | { valid: false; record: null; reason: string }
   > {
     const tokenHash = this.encryption.hash(rawToken);
 
     const record = await this.prisma.passwordResetToken.findFirst({
-      where:  { userId, tokenHash },
+      where: { userId, tokenHash },
       select: { id: true, used: true, expiresAt: true },
     });
 
     if (!record) {
       return {
-        valid:  false,
+        valid: false,
         record: null,
         reason: 'Invalid or expired reset link. Please request a new one.',
       };
@@ -229,7 +231,7 @@ export class PasswordResetService {
 
     if (record.used) {
       return {
-        valid:  false,
+        valid: false,
         record: null,
         reason:
           'This reset link has already been used. Please request a new one.',
@@ -238,12 +240,27 @@ export class PasswordResetService {
 
     if (new Date() > record.expiresAt) {
       return {
-        valid:  false,
+        valid: false,
         record: null,
         reason:
           'This reset link has expired. Links are valid for 1 hour. Please request a new one.',
       };
     }
+
+    // In requestReset() — after sending the email:
+    void this.secEvent.logPasswordResetRequested({
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      userId: user.id,
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      metadata: { email: dto.email },
+    });
+
+    // In resetPassword() — after the transaction succeeds:
+    void this.secEvent.logPasswordChanged({
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+      userId: dto.userId,
+      metadata: { trigger: 'password_reset_flow' },
+    });
 
     return { valid: true, record: { id: record.id }, reason: null };
   }
