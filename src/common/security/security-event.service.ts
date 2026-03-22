@@ -6,7 +6,7 @@
 // break the primary auth flow. All errors are caught and logged server-side.
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { SecurityEvent } from '@prisma/client';
+import { Prisma, SecurityEvent } from '@prisma/client';
 
 interface LogEventParams {
   eventType: SecurityEvent;
@@ -36,7 +36,9 @@ export class SecurityEventService {
           eventType: params.eventType,
           userId: params.userId ?? null,
           ipAddress: params.ipAddress ?? null,
-          metadata: params.metadata ?? null,
+          // Cast required: Record<string,unknown> is wider than Prisma's InputJsonValue.
+          // Prisma.JsonNull is used instead of null for nullable JSON fields in Prisma 7.
+          metadata: (params.metadata as Prisma.InputJsonValue | undefined) ?? Prisma.JsonNull,
         },
       });
     } catch (error) {
