@@ -19,6 +19,7 @@ import {
 } from './exceptions/verification.exceptions';
 import { AuthService } from '../auth/auth.service';
 import { AuthTokens } from '../auth/interfaces/auth.interface';
+import { SecurityEventService } from 'src/common/security/security-event.service';
 
 // Max attempts allowed within the retry window
 const MAX_ATTEMPTS = 3;
@@ -42,11 +43,14 @@ export class VerificationService {
     private readonly httpService: HttpService,
     private readonly config: ConfigService,
     private readonly authService: AuthService,
+    private readonly secEvent: SecurityEventService,
   ) {
     const engineUrl = this.config.get<string>('ENGINE_URL');
     const engineApiKey = this.config.get<string>('ENGINE_API_KEY');
-    if (!engineUrl) throw new Error('ENGINE_URL environment variable is not set');
-    if (!engineApiKey) throw new Error('ENGINE_API_KEY environment variable is not set');
+    if (!engineUrl)
+      throw new Error('ENGINE_URL environment variable is not set');
+    if (!engineApiKey)
+      throw new Error('ENGINE_API_KEY environment variable is not set');
     this.engineUrl = engineUrl;
     this.engineApiKey = engineApiKey;
   }
@@ -219,6 +223,28 @@ export class VerificationService {
           `score: ${engineResponse.scores.composite_score} | ` +
           `reason: ${engineResponse.fail_reason}`,
       );
+    }
+
+    // In submitVerification() — after recording the attempt:
+    if (engineResponse.passed) {
+      void this.secEvent.logVerificationPassed({
+        userId,
+        ipAddress,
+        metadata: {
+          compositeScore: engineResponse.scores.composite_score,
+          attemptNumber,
+        },
+      });
+    } else {
+      void this.secEvent.logVerificationFailed({
+        userId,
+        ipAddress,
+        metadata: {
+          compositeScore: engineResponse.scores.composite_score,
+          failReason: engineResponse.fail_reason,
+          attemptNumber,
+        },
+      });
     }
 
     // ── Step 7: Build response for frontend
