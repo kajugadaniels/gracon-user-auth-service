@@ -14,6 +14,7 @@ import { CitizenModule } from './modules/citizen/citizen.module';
 import { VerificationModule } from './modules/verification/verification.module';
 import { CustomThrottlerGuard } from './common/guards/throttler.guard';
 import { DocsAuthMiddleware } from './common/security/docs-auth.middleware';
+import { SecurityEventModule } from './common/security';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { DocsAuthMiddleware } from './common/security/docs-auth.middleware';
     AppMailerModule,
     S3Module,
     TasksModule,
+    SecurityEventModule,
     UsersModule,
     AuthModule,
     CitizenModule,
