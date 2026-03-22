@@ -111,6 +111,11 @@ export class PasswordResetService {
       token: rawToken,
     });
 
+    void this.secEvent.logPasswordResetRequested({
+      userId: user.id,
+      metadata: { email: dto.email },
+    });
+
     this.logger.log(`Password reset requested for user: ${user.id}`);
     return safeResponse;
   }
@@ -190,6 +195,11 @@ export class PasswordResetService {
       });
     });
 
+    void this.secEvent.logPasswordChanged({
+      userId: dto.userId,
+      metadata: { trigger: 'password_reset_flow' },
+    });
+
     this.logger.log(
       `Password reset successful for user: ${dto.userId} — all sessions revoked`,
     );
@@ -246,21 +256,6 @@ export class PasswordResetService {
           'This reset link has expired. Links are valid for 1 hour. Please request a new one.',
       };
     }
-
-    // In requestReset() — after sending the email:
-    void this.secEvent.logPasswordResetRequested({
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      userId: user.id,
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      metadata: { email: dto.email },
-    });
-
-    // In resetPassword() — after the transaction succeeds:
-    void this.secEvent.logPasswordChanged({
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-      userId: dto.userId,
-      metadata: { trigger: 'password_reset_flow' },
-    });
 
     return { valid: true, record: { id: record.id }, reason: null };
   }
