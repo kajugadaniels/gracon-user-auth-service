@@ -6,6 +6,7 @@ import {
   IsString,
   Length,
   Min,
+  MinLength,
   validateSync,
 } from 'class-validator';
 
@@ -35,7 +36,11 @@ class EnvironmentVariables {
 
   // ─── JWT ───────────────────────────────────────────────────────────────────
   @IsString()
-  @IsNotEmpty({ message: 'JWT_SECRET is required' })
+  @MinLength(32, {
+    message:
+      'JWT_SECRET must be at least 32 characters. ' +
+      'Generate with: node -e "console.log(require(\'crypto\').randomBytes(64).toString(\'hex\'))"',
+  })
   JWT_SECRET!: string;
 
   // ─── Encryption ────────────────────────────────────────────────────────────
