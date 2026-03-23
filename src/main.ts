@@ -3,6 +3,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
+import { json } from 'express';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
@@ -36,6 +37,15 @@ async function bootstrap() {
   // on every response before any route logic runs.
   // Headers are stricter in production than development.
   app.use(helmet(buildHelmetConfig(env)));
+
+  // ── Body size limit ─────────────────────────────────────────────
+  // NestJS/Express defaults to 100kb. A malicious client can send a
+  // large JSON payload to any endpoint (login, register, etc.) causing
+  // unnecessary memory allocation and potential DoS before any route
+  // logic or auth check runs. 10kb is well above any legitimate JSON
+  // payload on this service — all file uploads go through Multer which
+  // enforces its own separate limit.
+  app.use(json({ limit: '10kb' }));
 
   // ── CORS ────────────────────────────────────────────────────────
   // Only our frontend origin is allowed.
