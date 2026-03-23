@@ -65,8 +65,19 @@ export class PasswordResetService {
       },
     });
 
-    // Exit silently — do not reveal whether email is registered
+    // Exit silently — do not reveal whether email is registered.
+    //
+    // Timing-attack guard: without this dummy operation, the not-found
+    // path returns in <5ms (one DB query) while the found path takes
+    // 150–400ms (DB writes + email send). An attacker sending many
+    // requests and measuring response time can reliably enumerate
+    // registered emails even though both paths return identical text.
+    //
+    // Running bcrypt.hash at the same cost factor used for real tokens
+    // makes both paths take ~150–400ms, collapsing the timing signal.
+    // The result is intentionally discarded — this is pure delay work.
     if (!user || !user.isActive) {
+      await bCrypt.hash(dto.email, this.BCRYPT_ROUNDS);
       return safeResponse;
     }
 
