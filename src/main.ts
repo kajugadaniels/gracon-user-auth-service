@@ -4,6 +4,8 @@ import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
+import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { ThrottlerExceptionFilter } from './common/filters/throttler-exception.filter';
 import { DocsAuthMiddleware } from './common/security/docs-auth.middleware';
 import { buildHelmetConfig } from './common/security/helmet.config';
@@ -52,7 +54,15 @@ async function bootstrap() {
   );
 
   // ── Global exception filters ────────────────────────────────────
-  app.useGlobalFilters(new ThrottlerExceptionFilter());
+  // Registration order determines precedence — NestJS picks the most
+  // specific @Catch() match. Register least-specific first so the
+  // more-specific filters (HttpException, ThrottlerException) take
+  // priority over the catch-all.
+  app.useGlobalFilters(
+    new AllExceptionsFilter(),      // @Catch()            — unhandled crashes
+    new HttpExceptionFilter(),      // @Catch(HttpException) — all 4xx/5xx
+    new ThrottlerExceptionFilter(), // @Catch(ThrottlerException) — 429 + Retry-After
+  );
 
   // ── API Documentation (Swagger) ─────────────────────────────────
   // Always available in development — open on localhost with no auth.
