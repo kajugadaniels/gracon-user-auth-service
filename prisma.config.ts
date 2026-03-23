@@ -7,8 +7,9 @@ export default defineConfig({
   schema: "prisma/schema.prisma",
   migrations: {
     path: "prisma/migrations",
-    // node -r dotenv/config preloads .env before the seed subprocess runs
-    seed: "node -r dotenv/config prisma/seed.js",
+    // ts-node runs seed.ts directly — no compiled .js needed
+    // -r dotenv/config preloads .env before the seed subprocess runs
+    seed: "npx ts-node -r dotenv/config prisma/seed.ts",
   },
   datasource: {
     url: process.env["DATABASE_URL"],
