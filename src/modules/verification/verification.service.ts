@@ -109,8 +109,10 @@ export class VerificationService {
       throw new VerificationAlreadyPassedException();
     }
 
-    // ── Gate 5: Check attempt count within the time window
-    await this.enforceAttemptLimit(userId);
+    // ── Gate 5: Check attempt count within the time window.
+    // Returns the windowed count so the response can report accurate
+    // attemptsUsed / attemptsRemaining without a second DB query.
+    const attemptsInWindowBeforeThis = await this.enforceAttemptLimit(userId);
 
     // ── Step 1: Document number check
     // Decrypt stored NID and compare against what user typed
@@ -248,7 +250,13 @@ export class VerificationService {
     }
 
     // ── Step 7: Build response for frontend
-    const attemptsUsed = attemptNumber;
+    //
+    // Use the windowed count returned by enforceAttemptLimit (before this
+    // attempt) + 1 for the response. Using the cumulative attemptNumber here
+    // would report the wrong remaining count for users who have retried after
+    // the 24-hour window: a user with 3 total all-time attempts would see
+    // "0 remaining" on day 2 even though the gate already let them through.
+    const attemptsUsed = attemptsInWindowBeforeThis + 1;
     const attemptsRemaining = Math.max(0, MAX_ATTEMPTS - attemptsUsed);
 
     // Build identity summary from citizen record for the result screen
@@ -333,10 +341,17 @@ export class VerificationService {
   // ─── Private helpers ──────────────────────────────────────────────────────
 
   /**
-   * Checks how many attempts the user has made in the current window.
-   * Throws TooManyVerificationAttemptsException if limit is reached.
+   * Counts attempts in the current 24-hour window and throws if the limit
+   * is reached. Returns the count so the caller can report accurate
+   * attemptsUsed / attemptsRemaining in the response without a second query.
+   *
+   * The gate deliberately uses the windowed idVerification count — not the
+   * cumulative verificationAttempts field on User. The cumulative counter
+   * exists for admin visibility only and must never be used as a gate,
+   * otherwise a user who exhausts their 3 attempts on day 1 is permanently
+   * locked even after the window expires.
    */
-  private async enforceAttemptLimit(userId: string): Promise<void> {
+  private async enforceAttemptLimit(userId: string): Promise<number> {
     const windowStart = new Date(
       Date.now() - ATTEMPT_WINDOW_HOURS * 60 * 60 * 1000,
     );
@@ -355,6 +370,8 @@ export class VerificationService {
       );
       throw new TooManyVerificationAttemptsException(ATTEMPT_WINDOW_HOURS);
     }
+
+    return attemptsInWindow;
   }
 
   /**
