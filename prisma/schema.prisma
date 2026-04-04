@@ -45,6 +45,10 @@ model User {
   @@index([isActive, createdAt])
   @@index([isVerified, isIdVerified, createdAt])
   @@map("users")
+  personalSignedDocuments PersonalSignedDocument[]
+  personalSignatureImages PersonalSignatureImage[]
+  personalKeyPairs PersonalKeyPair[]
+  personalCertificates PersonalCertificate[]
 }
 
 // ─── Citizen Identities ───────────────────────────────────────────────────────
@@ -188,6 +192,147 @@ enum SecurityEvent {
   SESSIONS_REVOKED_BY_USER
   REVOKED_TOKEN_REUSE
   RATE_LIMIT_EXCEEDED
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DIGITAL SIGNATURE SERVICE TABLES (api/signature/)
+// These tables are owned by api/auth/ for migrations.
+// api/signature/ copies this schema and runs `prisma generate` only — never migrate.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ─── Personal Signature Images ────────────────────────────────────────────────
+// Stores the user's optional handwritten signature image reference in S3.
+// This is purely decorative — it has no cryptographic value.
+// The actual security lives in PersonalCertificate and PersonalSignedDocument.
+// One active image per user at all times (enforced by isActive flag).
+model PersonalSignatureImage {
+  id        String   @id @default(uuid())
+  userId    String                           // which user this belongs to
+  s3Key     String                           // private S3 object key — never exposed directly
+  mimeType  String                           // image/png or image/svg+xml only
+  sizeBytes Int                              // file size in bytes — max 2MB enforced at controller
+  isActive  Boolean  @default(true)          // false = soft-deleted, still in S3
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("personal_signature_images")
+}
+
+// ─── Personal Key Pairs ───────────────────────────────────────────────────────
+// Stores the user's cryptographic key pair.
+// CRITICAL: privateKeyEncrypted is AES-256-CBC encrypted using a key derived as:
+//   perUserKey = HMAC-SHA256(SIGNATURE_ENCRYPTION_SECRET, userId)
+// This means every user's private key is encrypted with a DIFFERENT key.
+// The plain private key NEVER touches the database — encrypted before storage.
+// In production (CloudHSM): privateKeyEncrypted will be null and keyHandle
+// will hold the HSM key reference instead.
+model PersonalKeyPair {
+  id                  String             @id @default(uuid())
+  userId              String                                    // which user owns this key pair
+  algorithm           PersonalKeyAlgorithm                      // RSA_2048 or ED25519
+  publicKey           String             @db.Text               // PEM format — stored plain
+  privateKeyEncrypted String?            @db.Text               // AES-256-CBC encrypted PEM (null if HSM)
+  keyHandle           String?                                   // CloudHSM key reference (null if software)
+  fingerprint         String                                    // SHA-256 of public key — for quick lookup
+  isActive            Boolean            @default(true)         // false when rotated
+  createdAt           DateTime           @default(now())
+
+  user                User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  personalCertificate PersonalCertificate?
+
+  @@index([userId])
+  @@index([fingerprint])
+  @@map("personal_key_pairs")
+}
+
+enum PersonalKeyAlgorithm {
+  RSA_2048
+  ED25519
+}
+
+// ─── Personal Certificates ────────────────────────────────────────────────────
+// X.509 digital certificate issued to a verified individual user.
+// Binds the user's verified identity (from citizen_identities) to their public key.
+// Self-signed in development. CA-signed in production.
+// Subject fields are populated from the citizen_identities table at issuance time.
+// Once revoked, a certificate CANNOT be un-revoked — it is permanent.
+model PersonalCertificate {
+  id              String    @id @default(uuid())
+  userId          String                                    // which user holds this certificate
+  keyPairId       String    @unique                         // which key pair this cert is tied to
+  serialNumber    String    @unique                         // UUID — used for CRL and OCSP
+  // Subject stored as flat fields for queryability — also embedded in certificatePem
+  subjectCN       String                                   // CN = "FirstName LastName" (from NIDA data)
+  subjectO        String    @default("ID Verification Platform")
+  subjectC        String    @default("RW")
+  subjectUserId   String                                   // SAN = userId — ties cert to platform account
+  notBefore       DateTime                                 // certificate validity start
+  notAfter        DateTime                                 // certificate validity end (2 years default)
+  certificatePem  String    @db.Text                       // full X.509 PEM — what third parties verify
+  isRevoked       Boolean   @default(false)
+  revokedAt       DateTime?
+  revokedReason   String?                                  // required when revoking
+  createdAt       DateTime  @default(now())
+
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  keyPair     PersonalKeyPair @relation(fields: [keyPairId], references: [id])
+  signedDocs  PersonalSignedDocument[]
+  verifications PersonalSignatureVerification[]
+
+  @@index([userId])
+  @@index([serialNumber])
+  @@index([notAfter])
+  @@map("personal_certificates")
+}
+
+// ─── Personal Signed Documents ────────────────────────────────────────────────
+// Immutable audit trail of every document signing event.
+// Records are NEVER deleted — they are the legal proof of signing.
+// documentHash is the SHA-256 of the original document (computed by the caller).
+// signatureBytes is the base64-encoded cryptographic signature.
+// The document itself is never stored here — only its hash.
+model PersonalSignedDocument {
+  id             String   @id @default(uuid())
+  userId         String                         // who signed
+  certificateId  String                         // which certificate was active at signing time
+  documentName   String                         // human-readable name provided by caller
+  documentHash   String                         // SHA-256 hex of the document — 64 chars
+  signatureBytes String   @db.Text              // base64-encoded cryptographic signature
+  metadata       Json?                          // optional: page count, document type, etc.
+  signedAt       DateTime @default(now())       // server-side timestamp — never client-provided
+
+  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  certificate PersonalCertificate @relation(fields: [certificateId], references: [id])
+
+  @@index([userId])
+  @@index([certificateId])
+  @@index([documentHash])
+  @@index([signedAt])
+  @@map("personal_signed_documents")
+}
+
+// ─── Personal Signature Verifications ────────────────────────────────────────
+// Log of every verification request — whether the endpoint is public or authenticated.
+// verifiedByUserId is null when a third party (unauthenticated) calls /verify.
+// This gives full auditability of who checked whose signatures and when.
+model PersonalSignatureVerification {
+  id                String    @id @default(uuid())
+  certificateId     String                         // whose certificate was verified
+  verifiedByUserId  String?                        // null = public/third-party verification
+  documentHash      String                         // the hash that was submitted for checking
+  result            Boolean                        // true = valid, false = invalid/tampered
+  failReason        String?                        // why it failed if result = false
+  ipAddress         String?
+  createdAt         DateTime  @default(now())
+
+  certificate PersonalCertificate @relation(fields: [certificateId], references: [id])
+
+  @@index([certificateId])
+  @@index([createdAt])
+  @@map("personal_signature_verifications")
 }
 
 // ─── Admins ───────────────────────────────────────────────────────────────────
