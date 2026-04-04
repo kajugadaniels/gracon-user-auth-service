@@ -12,13 +12,16 @@
 import { PrismaClient, AdminRole } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import * as bcrypt from 'bcrypt';
+import { normalizeDatabaseUrl } from '../src/common/prisma/database-url.util';
 
 // Prisma 7 requires a driver adapter — datasource url in schema.prisma is no longer supported
 if (!process.env.DATABASE_URL) {
   console.error('❌ DATABASE_URL environment variable is not set');
   process.exit(1);
 }
-const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
+const adapter = new PrismaPg({
+  connectionString: normalizeDatabaseUrl(process.env.DATABASE_URL),
+});
 const prisma = new PrismaClient({ adapter });
 
 // bcrypt cost — must match auth service setting
