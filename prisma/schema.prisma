@@ -49,6 +49,8 @@ model User {
   personalSignatureImages PersonalSignatureImage[]
   personalKeyPairs PersonalKeyPair[]
   personalCertificates PersonalCertificate[]
+  institutionMembers InstitutionMember[]
+  institutionStamps InstitutionStamp[]
 }
 
 // ─── Citizen Identities ───────────────────────────────────────────────────────
@@ -333,6 +335,252 @@ model PersonalSignatureVerification {
   @@index([certificateId])
   @@index([createdAt])
   @@map("personal_signature_verifications")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DIGITAL STAMP SERVICE TABLES (api/stamp/)
+// These tables are owned by api/auth/ for migrations.
+// api/stamp/ copies this schema and runs `prisma generate` only — never migrate.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ─── Institutions ─────────────────────────────────────────────────────────────
+// An institution is any organisation registered on Gracon 360 with the ability
+// to issue institutional stamps. Examples: companies, NGOs, government agencies.
+// Institutions are created by SUPER_ADMIN only — never self-registered.
+// registrationNumber is the official RDB (Rwanda Development Board) company number.
+model Institution {
+  id                 String              @id @default(uuid())
+  name               String                                    // official full legal name
+  type               InstitutionType                           // COMPANY, NGO, GOVERNMENT, OTHER
+  registrationNumber String              @unique               // RDB or equivalent registration number
+  country            String              @default("RW")
+  isActive           Boolean             @default(true)        // SUPER_ADMIN can deactivate
+  createdByAdminId   String?                                   // which SUPER_ADMIN created this
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  members            InstitutionMember[]
+  keyPairs           InstitutionKeyPair[]
+  certificates       InstitutionCertificate[]
+  stampImages        InstitutionStampImage[]
+  resolutions        AuthorityResolution[]
+  stamps             InstitutionStamp[]
+
+  @@index([registrationNumber])
+  @@map("institutions")
+}
+
+enum InstitutionType {
+  COMPANY
+  NGO
+  GOVERNMENT
+  OTHER
+}
+
+// ─── Institution Members ──────────────────────────────────────────────────────
+// Maps a verified individual user to an institution.
+// A user can be a member of multiple institutions.
+// stampAuthority: true means this member can perform stamp operations.
+// Only an institution admin (hasAdminRole = true) can grant stampAuthority.
+// Authority is always traced back to an AuthorityResolution.
+model InstitutionMember {
+  id               String    @id @default(uuid())
+  userId           String                         // verified user who is a member
+  institutionId    String                         // which institution
+  roleTitle        String                         // e.g. "Finance Director", "CEO"
+  hasAdminRole     Boolean   @default(false)      // can manage this institution's members
+  stampAuthority   Boolean   @default(false)      // can perform stamp operations
+  resolutionId     String?                        // which AuthorityResolution grants stamp authority
+  isActive         Boolean   @default(true)       // false = membership revoked
+  addedByUserId    String?                        // which institution admin added this member
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  institution Institution        @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  resolution  AuthorityResolution? @relation(fields: [resolutionId], references: [id])
+
+  // Unique: one active membership record per user per institution
+  @@unique([userId, institutionId])
+  @@index([institutionId])
+  @@index([userId])
+  @@map("institution_members")
+}
+
+// ─── Authority Resolutions ────────────────────────────────────────────────────
+// A board resolution that formally grants stamp authority within an institution.
+// Every stamp must trace back to a valid, active resolution.
+// Resolutions can be revoked — revoking one immediately blocks all members
+// whose stampAuthority depended on this resolution.
+// Resolutions are NEVER deleted — they form part of the legal audit chain.
+model AuthorityResolution {
+  id            String    @id @default(uuid())
+  institutionId String                         // which institution this resolution belongs to
+  title         String                         // e.g. "Board Resolution 2026-Q1-001"
+  scope         String                         // what this resolution authorises (free text)
+  grantedBy     String                         // name/title of the authority who granted this
+  isActive      Boolean   @default(true)       // false = revoked — members using this lose authority
+  revokedAt     DateTime?
+  revokedReason String?
+  validFrom     DateTime                       // resolution effective date
+  validUntil    DateTime?                      // null = no expiry, otherwise explicit end date
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  institution Institution        @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  members     InstitutionMember[]
+  stamps      InstitutionStamp[]
+
+  @@index([institutionId])
+  @@map("authority_resolutions")
+}
+
+// ─── Institution Stamp Images ─────────────────────────────────────────────────
+// The institutional stamp image — company seal, logo, or official mark.
+// Same pattern as PersonalSignatureImage — purely decorative, no crypto value.
+// One active stamp image per institution at all times.
+model InstitutionStampImage {
+  id            String    @id @default(uuid())
+  institutionId String                         // which institution
+  s3Key         String                         // private S3 key — never exposed directly
+  mimeType      String                         // image/png or image/svg+xml only
+  sizeBytes     Int
+  isActive      Boolean   @default(true)
+  uploadedByUserId String?                     // which institution admin uploaded this
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+
+  @@index([institutionId])
+  @@map("institution_stamp_images")
+}
+
+// ─── Institution Key Pairs ────────────────────────────────────────────────────
+// The institution's own cryptographic key pair — separate from any individual user's keys.
+// Encryption pattern mirrors PersonalKeyPair:
+//   perInstitutionKey = HMAC-SHA256(STAMP_ENCRYPTION_SECRET, institutionId)
+//   privateKeyEncrypted = AES-256-CBC(privateKeyPEM, perInstitutionKey)
+// In production (CloudHSM): privateKeyEncrypted = null, keyHandle = HSM reference.
+model InstitutionKeyPair {
+  id                  String                  @id @default(uuid())
+  institutionId       String                                         // which institution owns this
+  algorithm           InstitutionKeyAlgorithm                        // RSA_2048 or ED25519
+  publicKey           String                  @db.Text               // PEM — stored plain
+  privateKeyEncrypted String?                 @db.Text               // AES-256-CBC encrypted (null if HSM)
+  keyHandle           String?                                        // CloudHSM key reference
+  fingerprint         String                                         // SHA-256 of public key
+  isActive            Boolean                 @default(true)         // false when rotated
+  generatedByUserId   String?                                        // which institution admin generated
+  createdAt           DateTime                @default(now())
+
+  institution            Institution             @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  institutionCertificate InstitutionCertificate?
+
+  @@index([institutionId])
+  @@map("institution_key_pairs")
+}
+
+enum InstitutionKeyAlgorithm {
+  RSA_2048
+  ED25519
+}
+
+// ─── Institution Certificates ─────────────────────────────────────────────────
+// X.509 digital certificate for an institution — proves the institution's identity.
+// Subject fields reflect the institution, not an individual:
+//   CN = Institution full legal name
+//   O  = "ID Verification Platform"
+//   OU = "Institutional Certificate"
+//   C  = "RW"
+//   SAN = institutionId
+// The institution certificate is the second signature verified in every stamp check.
+model InstitutionCertificate {
+  id              String    @id @default(uuid())
+  institutionId   String                         // which institution holds this certificate
+  keyPairId       String    @unique              // which institution key pair this cert is tied to
+  serialNumber    String    @unique              // UUID — for CRL and OCSP
+  subjectCN       String                         // CN = institution name
+  subjectO        String    @default("ID Verification Platform")
+  subjectOU       String    @default("Institutional Certificate")
+  subjectC        String    @default("RW")
+  subjectInstId   String                         // SAN = institutionId
+  notBefore       DateTime
+  notAfter        DateTime
+  certificatePem  String    @db.Text
+  isRevoked       Boolean   @default(false)
+  revokedAt       DateTime?
+  revokedReason   String?
+  issuedByAdminId String?                        // which admin triggered issuance
+  createdAt       DateTime  @default(now())
+
+  institution   Institution        @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  keyPair       InstitutionKeyPair @relation(fields: [keyPairId], references: [id])
+  stamps        InstitutionStamp[]
+
+  @@index([institutionId])
+  @@index([serialNumber])
+  @@map("institution_certificates")
+}
+
+// ─── Institution Stamps ───────────────────────────────────────────────────────
+// The core stamp record. Each stamp produces TWO independent cryptographic signatures:
+//   1. institutionSignatureBytes — signed by institution's private key
+//   2. userSignatureBytes — signed by the individual user's personal private key
+// Both signatures cover the SAME documentHash.
+// Both must be valid for the stamp to be trusted by any verifier.
+// personalCertificateId links to the user's PersonalCertificate at time of stamping.
+// institutionCertificateId links to the institution's certificate at time of stamping.
+// Records are NEVER deleted — they are the legal proof of institutional action.
+model InstitutionStamp {
+  id                       String    @id @default(uuid())
+  institutionId            String                         // which institution stamped
+  userId                   String                         // which individual performed the stamp
+  memberId                 String                         // which InstitutionMember record authorised this
+  resolutionId             String                         // which AuthorityResolution backed this action
+  institutionCertificateId String                         // institution cert used for stamp 1
+  personalCertificateId    String                         // user's personal cert used for stamp 2
+  documentName             String                         // human-readable name
+  documentHash             String                         // SHA-256 hex of the document
+  institutionSignatureBytes String   @db.Text              // base64 — institution's crypto signature
+  userSignatureBytes        String   @db.Text              // base64 — individual's crypto signature
+  roleTitle                String                         // role at time of stamping — snapshot
+  metadata                 Json?                          // optional extra context
+  stampedAt                DateTime  @default(now())      // server-side timestamp
+
+  institution            Institution            @relation(fields: [institutionId], references: [id])
+  user                   User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resolution             AuthorityResolution    @relation(fields: [resolutionId], references: [id])
+  institutionCertificate InstitutionCertificate @relation(fields: [institutionCertificateId], references: [id])
+
+  @@index([institutionId])
+  @@index([userId])
+  @@index([documentHash])
+  @@index([stampedAt])
+  @@map("institution_stamps")
+}
+
+// ─── Institution Stamp Verifications ─────────────────────────────────────────
+// Log of every stamp verification request — authenticated or public.
+// Both signature bytes and both verification results are recorded independently
+// so that partial failures (e.g. institution sig valid but user sig invalid) are auditable.
+model InstitutionStampVerification {
+  id                       String    @id @default(uuid())
+  institutionCertificateId String                         // institution cert that was checked
+  personalCertificateId    String                         // personal cert that was checked
+  verifiedByUserId         String?                        // null = public/third-party
+  documentHash             String
+  institutionSigValid      Boolean                        // was the institution signature valid?
+  userSigValid             Boolean                        // was the user signature valid?
+  result                   Boolean                        // true only if BOTH are valid
+  failReason               String?
+  ipAddress                String?
+  createdAt                DateTime  @default(now())
+
+  @@index([institutionCertificateId])
+  @@index([personalCertificateId])
+  @@index([createdAt])
+  @@map("institution_stamp_verifications")
 }
 
 // ─── Admins ───────────────────────────────────────────────────────────────────
