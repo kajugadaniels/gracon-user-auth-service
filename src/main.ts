@@ -24,7 +24,7 @@ async function bootstrap() {
   });
 
   const config = app.get(ConfigService);
-  const port = config.get<number>('APP_PORT', 3000);
+  const port = config.get<number>('APP_PORT', 4000);
   const env = config.get<string>('APP_ENV', 'development');
   const frontendUrl = config.get<string>(
     'FRONTEND_URL',
@@ -70,9 +70,9 @@ async function bootstrap() {
   // more-specific filters (HttpException, ThrottlerException) take
   // priority over the catch-all.
   app.useGlobalFilters(
-    new AllExceptionsFilter(),      // @Catch()                    — unhandled crashes
-    new PrismaExceptionFilter(),    // @Catch(PrismaClient*)       — DB errors
-    new HttpExceptionFilter(),      // @Catch(HttpException)       — all 4xx/5xx
+    new AllExceptionsFilter(), // @Catch()                    — unhandled crashes
+    new PrismaExceptionFilter(), // @Catch(PrismaClient*)       — DB errors
+    new HttpExceptionFilter(), // @Catch(HttpException)       — all 4xx/5xx
     new ThrottlerExceptionFilter(), // @Catch(ThrottlerException)  — 429 + Retry-After
   );
 
