@@ -20,7 +20,10 @@ import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { ThrottleAuth } from '../../common/decorators/throttle.decorator';
+import {
+  ThrottleAuth,
+  ThrottleGeneral,
+} from '../../common/decorators/throttle.decorator';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -178,8 +181,10 @@ export class AuthController {
   /**
    * POST /api/v1/auth/logout
    * General limit — not a sensitive write, but still protected globally.
+   * Explicitly scoped to prevent strict/auth throttlers from applying.
    */
   @Post('logout')
+  @ThrottleGeneral()
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
@@ -220,8 +225,10 @@ export class AuthController {
   /**
    * POST /api/v1/auth/logout-all
    * General limit — revokes all sessions for the authenticated user.
+   * Explicitly scoped to prevent strict/auth throttlers from applying.
    */
   @Post('logout-all')
+  @ThrottleGeneral()
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
