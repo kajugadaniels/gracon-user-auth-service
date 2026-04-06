@@ -30,6 +30,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { profileUploadConfig } from '../../common/aws/s3/multer.config';
 import {
   ThrottleAuth,
+  ThrottleGeneral,
   ThrottleStrict,
 } from '../../common/decorators/throttle.decorator';
 
@@ -225,8 +226,12 @@ export class UsersController {
   /**
    * GET /api/v1/users/profile
    * General limit — authenticated read, no special restriction needed.
+   * Explicitly scoped to the general throttler so the strict/auth limits
+   * (3/10 min and 5/min) do not apply — without this decorator all three
+   * global throttlers fire, blocking the profile page after 3 loads.
    */
   @Get('profile')
+  @ThrottleGeneral()
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
@@ -290,8 +295,10 @@ export class UsersController {
   /**
    * PATCH /api/v1/users/profile
    * General limit — authenticated write.
+   * Explicitly scoped to prevent strict/auth throttlers from applying.
    */
   @Patch('profile')
+  @ThrottleGeneral()
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
@@ -363,8 +370,10 @@ export class UsersController {
   /**
    * POST /api/v1/users/profile/image
    * General limit — file upload, validated by Multer before it reaches here.
+   * Explicitly scoped to prevent strict/auth throttlers from applying.
    */
   @Post('profile/image')
+  @ThrottleGeneral()
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @UseInterceptors(FileInterceptor('image', profileUploadConfig))
