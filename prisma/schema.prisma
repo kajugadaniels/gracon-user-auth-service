@@ -732,6 +732,8 @@ model Document {
   signatureImageMimeType String?                      // snapshot mime type for display fidelity
   signatureImageSizeBytes Int?                        // snapshot file size for UI/debugging
   signatureBlockAlignment String?                     // presentation alignment for the signed strip on the rendered paper
+  signatureBlockX         Float?                      // normalized x position of signature strip (0.0 = left edge, 1.0 = right edge)
+  signatureBlockY         Float?                      // normalized y position of signature strip (0.0 = top, 1.0 = bottom)
   isDeleted       Boolean         @default(false)      // soft delete — never hard delete
   deletedAt       DateTime?
   // Signing references — set when document is signed
