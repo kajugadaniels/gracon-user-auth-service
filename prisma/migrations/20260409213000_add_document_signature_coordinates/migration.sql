@@ -1,0 +1,3 @@
+ALTER TABLE "documents"
+ADD COLUMN "signatureBlockX" DOUBLE PRECISION,
+ADD COLUMN "signatureBlockY" DOUBLE PRECISION;
