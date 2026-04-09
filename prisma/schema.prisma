@@ -51,6 +51,13 @@ model User {
   personalCertificates PersonalCertificate[]
   institutionMembers InstitutionMember[]
   institutionStamps InstitutionStamp[]
+  documentSignatureRequests DocumentSignatureRequest[] @relation("SignatureRequestor")
+  documents Document[] @relation("DocumentOwner")
+  documentFolders DocumentFolder[]
+  documentCollaborators DocumentCollaborator[]
+  documentVersions DocumentVersion[]
+  documentComments DocumentComment[]
+  documentSignatureRequestent DocumentSignatureRequest[] @relation("SignatureRespondent")
 }
 
 // ─── Citizen Identities ───────────────────────────────────────────────────────
@@ -694,4 +701,198 @@ enum AdminAction {
   ADMIN_DEACTIVATED
   ADMIN_REACTIVATED
   ADMIN_INVITE_RESENT
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DOCUMENT SERVICE TABLES (api/documents/)
+// Owned by api/auth/ for migrations.
+// api/documents/ copies this schema and runs `prisma generate` only — never migrate.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ─── Documents ────────────────────────────────────────────────────────────────
+// The core document record. Content is stored in S3 as JSON (editor state).
+// A document moves through a strict lifecycle: DRAFT → FINALISED → SIGNED → LOCKED.
+// Once LOCKED no fields can be modified — this is enforced at service level.
+// The contentHash is computed at finalisation time and verified at signing time.
+// If content has changed between finalise and sign, the service rejects the sign.
+model Document {
+  id              String          @id @default(uuid())
+  ownerId         String                               // verified user who created this
+  title           String          @default("Untitled Document")
+  type            DocumentType                         // RICH_TEXT or SPREADSHEET
+  status          DocumentStatus  @default(DRAFT)
+  folderId        String?                              // optional folder organisation
+  tags            String[]        @default([])         // user-assigned tags
+  s3ContentKey    String?                              // S3 key for editor JSON state
+  s3PdfKey        String?                              // S3 key for rendered PDF (set after signing)
+  contentHash     String?                              // SHA-256 of content JSON at finalisation
+  wordCount       Int             @default(0)          // updated on each autosave
+  isDeleted       Boolean         @default(false)      // soft delete — never hard delete
+  deletedAt       DateTime?
+  // Signing references — set when document is signed
+  personalSignedDocumentId  String?   @unique          // FK to personal_signed_documents
+  institutionStampId        String?   @unique          // FK to institution_stamps (optional stamp)
+  // Timestamps
+  finalisedAt     DateTime?                            // when DRAFT → FINALISED
+  signedAt        DateTime?                            // when FINALISED → SIGNED
+  lockedAt        DateTime?                            // when SIGNED → LOCKED
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  owner         User                    @relation("DocumentOwner",       fields: [ownerId],   references: [id], onDelete: Cascade)
+  folder        DocumentFolder?         @relation(fields: [folderId],   references: [id],    onDelete: SetNull)
+  collaborators DocumentCollaborator[]
+  versions      DocumentVersion[]
+  comments      DocumentComment[]
+  signatureRequests DocumentSignatureRequest[]
+
+  @@index([ownerId])
+  @@index([status])
+  @@index([folderId])
+  @@index([createdAt])
+  @@map("documents")
+}
+
+enum DocumentType {
+  RICH_TEXT
+  SPREADSHEET
+}
+
+enum DocumentStatus {
+  DRAFT        // Being edited — content can change
+  FINALISED    // Content frozen — hash computed — awaiting signatures
+  SIGNED       // All required signatures collected
+  LOCKED       // Permanently immutable — PDF generated
+}
+
+// ─── Document Folders ────────────────────────────────────────────────────────
+// Users organise their documents into folders.
+// Folders can be nested one level deep (a folder can have a parentFolderId).
+// Folders are never shared — they belong to one user only.
+model DocumentFolder {
+  id            String    @id @default(uuid())
+  ownerId       String
+  name          String    @db.VarChar(255)
+  parentFolderId String?                            // one level of nesting only
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  owner         User               @relation(fields: [ownerId],        references: [id], onDelete: Cascade)
+  parentFolder  DocumentFolder?    @relation("FolderNesting", fields: [parentFolderId], references: [id])
+  subFolders    DocumentFolder[]   @relation("FolderNesting")
+  documents     Document[]
+
+  @@index([ownerId])
+  @@map("document_folders")
+}
+
+// ─── Document Collaborators ───────────────────────────────────────────────────
+// Maps a verified user to a document they did not create.
+// VIEWER can read and comment. EDITOR can read, comment, and edit.
+// SIGNER is a user who is required to sign before the document can be LOCKED.
+// A document owner is never in this table — they are always the owner.
+// Collaborators are always ID-verified users — unverified users cannot be added.
+model DocumentCollaborator {
+  id           String               @id @default(uuid())
+  documentId   String
+  userId       String
+  role         CollaboratorRole                         // VIEWER, EDITOR, SIGNER
+  invitedAt    DateTime             @default(now())
+  acceptedAt   DateTime?                                // null = invitation pending
+  isActive     Boolean              @default(true)
+
+  document     Document             @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  user         User                 @relation(fields: [userId],     references: [id], onDelete: Cascade)
+
+  @@unique([documentId, userId])
+  @@index([documentId])
+  @@index([userId])
+  @@map("document_collaborators")
+}
+
+enum CollaboratorRole {
+  VIEWER
+  EDITOR
+  SIGNER    // Must sign before document can be locked
+}
+
+// ─── Document Versions ───────────────────────────────────────────────────────
+// Every autosave creates a new version record with a snapshot of the content.
+// Versions are stored in S3. The current content is always at document.s3ContentKey.
+// Versions allow the user to roll back to any previous state while the document
+// is still in DRAFT status. Once FINALISED, new versions cannot be created.
+model DocumentVersion {
+  id            String    @id @default(uuid())
+  documentId    String
+  versionNumber Int                                    // 1, 2, 3 … increments per document
+  s3Key         String                                 // S3 key for this version's content JSON
+  wordCount     Int       @default(0)
+  savedById     String                                 // which user triggered this save
+  createdAt     DateTime  @default(now())
+
+  document      Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  savedBy       User      @relation(fields: [savedById],  references: [id])
+
+  @@unique([documentId, versionNumber])
+  @@index([documentId])
+  @@map("document_versions")
+}
+
+// ─── Document Comments ────────────────────────────────────────────────────────
+// Inline comments tied to a position in the document.
+// anchorText: the text the comment is anchored to (for display).
+// resolvedAt: set when the owner marks the comment resolved.
+// Replies are stored as comments with a parentCommentId.
+model DocumentComment {
+  id              String    @id @default(uuid())
+  documentId      String
+  authorId        String
+  parentCommentId String?                              // null = top-level, set = reply
+  anchorText      String?   @db.Text                  // text selection the comment is on
+  content         String    @db.Text
+  resolvedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  document        Document          @relation(fields: [documentId],      references: [id], onDelete: Cascade)
+  author          User              @relation(fields: [authorId],        references: [id])
+  parentComment   DocumentComment?  @relation("CommentReplies", fields: [parentCommentId], references: [id])
+  replies         DocumentComment[] @relation("CommentReplies")
+
+  @@index([documentId])
+  @@index([authorId])
+  @@map("document_comments")
+}
+
+// ─── Document Signature Requests ──────────────────────────────────────────────
+// When a document owner requests a signature from another verified user.
+// The document cannot be LOCKED until all pending requests are fulfilled.
+// status: PENDING → SIGNED or DECLINED.
+model DocumentSignatureRequest {
+  id              String                       @id @default(uuid())
+  documentId      String
+  requestedById   String                                              // the document owner
+  requestedUserId String                                              // the user asked to sign
+  status          SignatureRequestStatus        @default(PENDING)
+  message         String?                      @db.Text              // optional note from owner
+  declinedReason  String?
+  // Set when the user actually signs
+  personalSignedDocumentId String?             @unique
+  signedAt        DateTime?
+  createdAt       DateTime                     @default(now())
+  updatedAt       DateTime                     @updatedAt
+
+  document        Document  @relation(fields: [documentId],      references: [id], onDelete: Cascade)
+  requestedBy     User      @relation("SignatureRequestor", fields: [requestedById],   references: [id])
+  requestedUser   User      @relation("SignatureRespondent", fields: [requestedUserId], references: [id])
+
+  @@index([documentId])
+  @@index([requestedUserId])
+  @@map("document_signature_requests")
+}
+
+enum SignatureRequestStatus {
+  PENDING
+  SIGNED
+  DECLINED
 }
