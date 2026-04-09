@@ -51,13 +51,13 @@ model User {
   personalCertificates PersonalCertificate[]
   institutionMembers InstitutionMember[]
   institutionStamps InstitutionStamp[]
-  documentSignatureRequests DocumentSignatureRequest[] @relation("SignatureRequestor")
+  signatureRequestsMade DocumentSignatureRequest[] @relation("SignatureRequestor")
   documents Document[] @relation("DocumentOwner")
   documentFolders DocumentFolder[]
   documentCollaborators DocumentCollaborator[]
   documentVersions DocumentVersion[]
   documentComments DocumentComment[]
-  documentSignatureRequestent DocumentSignatureRequest[] @relation("SignatureRespondent")
+  signatureRequestsReceived DocumentSignatureRequest[] @relation("SignatureRespondent")
 }
 
 // ─── Citizen Identities ───────────────────────────────────────────────────────
@@ -895,4 +895,40 @@ enum SignatureRequestStatus {
   PENDING
   SIGNED
   DECLINED
+}
+
+// ─── Document Templates ───────────────────────────────────────────────────────
+// Pre-built document structures that users can use to create new documents quickly.
+// Templates are seeded by the platform — users cannot create their own in Phase A.
+// contentJson: the Tiptap JSON structure with placeholder variables.
+// Variables are replaced at document creation time:
+//   {{USER_FULL_NAME}} → user's first + last name from NIDA data
+//   {{USER_PLATFORM_ID}} → user's Platform ID
+//   {{DATE}} → current date
+//   {{INSTITUTION_NAME}} → institution name (for institutional templates)
+model DocumentTemplate {
+  id            String              @id @default(uuid())
+  name          String              @db.VarChar(255)
+  description   String              @db.Text
+  category      TemplateCategory
+  type          DocumentType                              // RICH_TEXT or SPREADSHEET
+  contentJson   Json                                     // Tiptap JSON with placeholders
+  isPublic      Boolean             @default(true)       // false = platform-admin only
+  usageCount    Int                 @default(0)          // incremented on each use
+  previewS3Key  String?                                  // S3 key for preview image
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  @@index([category])
+  @@index([type])
+  @@map("document_templates")
+}
+
+enum TemplateCategory {
+  CONTRACT         // Service agreements, employment contracts
+  LEGAL            // NDAs, affidavits, power of attorney
+  FINANCIAL        // Invoices, receipts, loan agreements
+  CORRESPONDENCE   // Letters, memos, official communications
+  RESOLUTION       // Board resolutions, meeting minutes
+  OTHER
 }
