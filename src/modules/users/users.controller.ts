@@ -3,18 +3,21 @@ import {
   Post,
   Get,
   Patch,
+  Query,
   Body,
   UseInterceptors,
   UploadedFile,
   HttpCode,
   HttpStatus,
   UseGuards,
+  BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiTags,
   ApiBearerAuth,
   ApiOperation,
+  ApiQuery,
   ApiBody,
   ApiConsumes,
   ApiResponse,
@@ -521,5 +524,52 @@ export class UsersController {
   ) {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call
     return this.usersService.changePassword(userId, dto);
+  }
+
+  /**
+   * GET /api/v1/users/search?q=partial@email
+   * General limit — authenticated read.
+   * Requires at least 5 characters to prevent broad enumeration.
+   */
+  @Get('search')
+  @ThrottleGeneral()
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Search users by partial email',
+    description:
+      'Returns a list of active, verified users whose email contains the provided query string. ' +
+      'A minimum of 5 characters is required to prevent broad enumeration. ' +
+      'Only safe display fields are returned — no sensitive data.\n\n' +
+      '**Authentication:** Full JWT access token required.',
+  })
+  @ApiQuery({
+    name: 'q',
+    description: 'Partial email string to search for. Must be at least 5 characters.',
+    example: 'john@',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Array of matching user summaries.',
+    schema: {
+      example: [
+        {
+          id: 'a3f2c1d4-8b7e-4f6a-9c2d-1e5b3a7f8d9c',
+          email: 'john.doe@example.com',
+          surName: 'DOE',
+          postNames: 'John',
+          imageUrl: null,
+        },
+      ],
+    },
+  })
+  @ApiResponse({ status: 400, description: 'Query must be at least 5 characters.' })
+  @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  async searchUsers(@Query('q') q: string) {
+    if (!q || q.trim().length < 5) {
+      throw new BadRequestException('Search query must be at least 5 characters.');
+    }
+    return this.usersService.searchUsers(q.trim());
   }
 }
