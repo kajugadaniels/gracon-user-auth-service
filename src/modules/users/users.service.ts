@@ -370,52 +370,6 @@ export class UsersService {
 
   // ─── Internal helpers ─────────────────────────────────────────────────────
 
-  // ─── User search ─────────────────────────────────────────────────────────
-
-  /**
-   * Searches active, verified users by a partial email prefix.
-   *
-   * Only returns minimal safe fields — no sensitive data ever leaves here.
-   * The caller is responsible for ensuring `query` is at least 5 characters
-   * before invoking this method (enforced at the controller layer too).
-   *
-   * @param query  Partial email string — must be at least 5 characters.
-   * @param limit  Maximum results to return (default 10, hard cap 20).
-   * @returns      Array of matching user summaries safe for frontend display.
-   */
-  async searchUsers(
-    query: string,
-    limit = 10,
-  ): Promise<{ id: string; email: string; surName: string | null; postNames: string | null; imageUrl: string | null }[]> {
-    const safeLimit = Math.min(limit, 20);
-
-    const users = await this.prisma.user.findMany({
-      where: {
-        email: { contains: query, mode: 'insensitive' },
-        isActive: true,
-        isVerified: true,
-      },
-      select: {
-        id: true,
-        email: true,
-        imageUrl: true,
-        citizenIdentity: {
-          select: { surName: true, postNames: true },
-        },
-      },
-      take: safeLimit,
-      orderBy: { email: 'asc' },
-    });
-
-    return users.map((u) => ({
-      id: u.id,
-      email: u.email,
-      surName: u.citizenIdentity?.surName ?? null,
-      postNames: u.citizenIdentity?.postNames ?? null,
-      imageUrl: u.imageUrl ?? null,
-    }));
-  }
-
   // Used by AuthService to find a user by email for login
   async findByEmail(email: string) {
     return this.prisma.user.findUnique({
