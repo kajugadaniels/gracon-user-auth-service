@@ -1,4 +1,5 @@
 import { Injectable, Inject, ExecutionContext } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import {
   ThrottlerGuard,
   ThrottlerException,
@@ -21,8 +22,19 @@ import { SecurityEventService } from '../security/security-event.service';
 export class CustomThrottlerGuard extends ThrottlerGuard {
   // Property injection — safe because NestJS resolves properties after
   // the parent constructor has fully initialised the guard instance.
+  @Inject(ConfigService)
+  private readonly config: ConfigService;
+
   @Inject(SecurityEventService)
   private readonly secEvent: SecurityEventService;
+
+  override async canActivate(context: ExecutionContext): Promise<boolean> {
+    if (this.config.get<string>('APP_ENV', 'development') === 'development') {
+      return true;
+    }
+
+    return super.canActivate(context);
+  }
 
   /**
    * Extracts the real client IP, preferring X-Forwarded-For so that
