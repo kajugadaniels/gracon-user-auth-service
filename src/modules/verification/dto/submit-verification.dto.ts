@@ -1,4 +1,4 @@
-import { IsString, Length, Matches } from 'class-validator';
+import { IsIn, IsOptional, IsString, Length, Matches } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 
@@ -19,4 +19,16 @@ export class SubmitVerificationDto {
     message: 'National ID number must contain only digits',
   })
   documentNumber!: string;
+
+  @ApiProperty({
+    description:
+      'Optional verification mode. `INVITATION` records a fresh biometric challenge for invitation acceptance without weakening the normal account verification flow.',
+    example: 'INVITATION',
+    required: false,
+    enum: ['INVITATION'],
+  })
+  @IsOptional()
+  @IsString()
+  @IsIn(['INVITATION'])
+  challengeMode?: 'INVITATION';
 }
