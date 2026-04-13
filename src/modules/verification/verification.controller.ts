@@ -240,6 +240,7 @@ export class VerificationController {
       files.idCard[0],
       files.selfie[0],
       ipAddress,
+      dto.challengeMode === 'INVITATION' ? 'INVITATION' : 'STANDARD',
     );
   }
 
