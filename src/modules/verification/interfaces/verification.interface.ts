@@ -43,4 +43,5 @@ export interface VerificationResult {
     accessToken: string;
     refreshToken: string;
   };
+  challengeMode?: 'STANDARD' | 'INVITATION';
 }
