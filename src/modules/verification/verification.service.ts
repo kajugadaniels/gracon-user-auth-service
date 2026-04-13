@@ -73,6 +73,7 @@ export class VerificationService {
     idCardFile: Express.Multer.File,
     selfieFile: Express.Multer.File,
     ipAddress: string,
+    challengeMode: 'STANDARD' | 'INVITATION' = 'STANDARD',
   ): Promise<VerificationResult> {
     // ── Gate 1: Load user with all required relations
     const user = await this.prisma.user.findUnique({
@@ -105,7 +106,7 @@ export class VerificationService {
     }
 
     // ── Gate 4: Already passed — idempotent response
-    if (user.isIdVerified) {
+    if (user.isIdVerified && challengeMode !== 'INVITATION') {
       throw new VerificationAlreadyPassedException();
     }
 
@@ -192,23 +193,34 @@ export class VerificationService {
 
     // ── Step 6: Activate ID verification if passed
     let upgradedTokens: AuthTokens | undefined;
+    const isInvitationChallenge = challengeMode === 'INVITATION';
+    const wasAlreadyVerified = user.isIdVerified;
 
     if (engineResponse.passed) {
-      await this.prisma.user.update({
-        where: { id: userId },
-        data: {
-          isIdVerified: true,
-          idVerifiedAt: new Date(),
-          verificationAttempts: { increment: 1 },
-        },
-      });
+      if (wasAlreadyVerified) {
+        await this.prisma.user.update({
+          where: { id: userId },
+          data: {
+            verificationAttempts: { increment: 1 },
+          },
+        });
+      } else {
+        await this.prisma.user.update({
+          where: { id: userId },
+          data: {
+            isIdVerified: true,
+            idVerifiedAt: new Date(),
+            verificationAttempts: { increment: 1 },
+          },
+        });
 
-      // Upgrade the user's limited token to a full token
-      upgradedTokens = await this.authService.upgradeToken(
-        userId,
-        ipAddress,
-        'id-verification-upgrade',
-      );
+        // Upgrade the user's limited token to a full token
+        upgradedTokens = await this.authService.upgradeToken(
+          userId,
+          ipAddress,
+          'id-verification-upgrade',
+        );
+      }
 
       this.logger.log(`ID verification passed for user: ${userId}`);
     } else {
@@ -276,13 +288,16 @@ export class VerificationService {
       livenessScore: engineResponse.scores.liveness_confidence,
       documentMatch: engineResponse.scores.document_match,
       message: engineResponse.passed
-        ? 'Identity verification successful. You can now log in.'
+        ? isInvitationChallenge
+          ? 'Identity verification successful. You can return to the invitation.'
+          : 'Identity verification successful. You can now log in.'
         : `Verification failed. ${attemptsRemaining} attempt(s) remaining.`,
       failReason: engineResponse.fail_reason,
       attemptsUsed,
       attemptsRemaining,
       idInfo,
       upgradedTokens,
+      challengeMode,
     };
   }
 
