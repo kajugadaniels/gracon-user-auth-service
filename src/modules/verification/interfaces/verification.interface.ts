@@ -1,6 +1,8 @@
 // Shapes for the engine response and internal verification result
 // Keeps our types explicit — no implicit any
 
+export type VerificationChallengeMode = 'STANDARD' | 'INVITATION';
+
 export interface EngineScoreBreakdown {
   face_similarity: number;
   liveness_confidence: number;
@@ -24,6 +26,13 @@ export interface VerificationIdInfo {
   documentNumber: string; // the document number the user typed (already validated)
 }
 
+export interface VerificationLockoutState {
+  maxAttempts: number;
+  attemptWindowHours: number;
+  retryAvailableAt: string | null;
+  retryAfterSeconds: number | null;
+}
+
 // What we return to the frontend after verification
 export interface VerificationResult {
   success: boolean;
@@ -36,6 +45,7 @@ export interface VerificationResult {
   failReason: string | null;
   attemptsUsed: number;
   attemptsRemaining: number;
+  lockout: VerificationLockoutState;
   // Always present when the user has a citizen identity record
   idInfo?: VerificationIdInfo;
   // Provided when passed=true — replaces the limited token
@@ -43,5 +53,14 @@ export interface VerificationResult {
     accessToken: string;
     refreshToken: string;
   };
-  challengeMode?: 'STANDARD' | 'INVITATION';
+  challengeMode?: VerificationChallengeMode;
+}
+
+export interface VerificationStatusResult {
+  isIdVerified: boolean;
+  attemptsUsed: number;
+  attemptsRemaining: number;
+  canAttempt: boolean;
+  lastAttemptAt: string | null;
+  lockout: VerificationLockoutState;
 }
