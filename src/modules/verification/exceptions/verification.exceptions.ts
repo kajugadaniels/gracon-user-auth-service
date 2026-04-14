@@ -15,13 +15,19 @@ export class VerificationAlreadyPassedException extends HttpException {
 }
 
 export class TooManyVerificationAttemptsException extends HttpException {
-  constructor(retryAfterHours: number) {
+  constructor(
+    retryAfterHours: number,
+    retryAvailableAt?: Date | null,
+    retryAfterSeconds?: number | null,
+  ) {
     super(
       {
         statusCode: HttpStatus.TOO_MANY_REQUESTS,
         error: 'Too Many Attempts',
         message: `Maximum verification attempts reached. Please try again in ${retryAfterHours} hour(s) or contact support.`,
         retryAfterHours,
+        retryAvailableAt: retryAvailableAt?.toISOString() ?? null,
+        retryAfterSeconds: retryAfterSeconds ?? null,
       },
       HttpStatus.TOO_MANY_REQUESTS,
     );
