@@ -54,6 +54,15 @@ export class VerificationController {
   @Post('submit')
   @ThrottleStrict()
   @HttpCode(HttpStatus.OK)
+  @UseInterceptors(
+    FileFieldsInterceptor(
+      [
+        { name: 'idCard', maxCount: 1 },
+        { name: 'selfie', maxCount: 1 },
+      ],
+      verificationUploadConfig,
+    ),
+  )
   @ApiConsumes('multipart/form-data')
   @ApiOperation({
     summary: 'Submit ID card and selfie for identity verification',
