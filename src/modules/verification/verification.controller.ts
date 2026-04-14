@@ -142,10 +142,16 @@ export class VerificationController {
         compositeScore: 0.94,
         faceScore: 0.97,
         livenessScore: 0.98,
-        documentMatch: 1.0,
+        documentMatch: true,
         message: 'Identity verification passed. Your account now has full access.',
         attemptsUsed: 1,
         attemptsRemaining: 2,
+        lockout: {
+          maxAttempts: 3,
+          attemptWindowHours: 24,
+          retryAvailableAt: null,
+          retryAfterSeconds: null,
+        },
         idInfo: {
           fullName: 'KWIZERA Gervais',
           dateOfBirth: '1999-06-14',
@@ -173,11 +179,17 @@ export class VerificationController {
         compositeScore: 0.41,
         faceScore: 0.38,
         livenessScore: 0.88,
-        documentMatch: 1.0,
+        documentMatch: true,
         message: 'Identity verification did not pass. Please try again with clearer photos.',
         failReason: 'Face similarity score below required threshold.',
         attemptsUsed: 2,
         attemptsRemaining: 1,
+        lockout: {
+          maxAttempts: 3,
+          attemptWindowHours: 24,
+          retryAvailableAt: null,
+          retryAfterSeconds: null,
+        },
         upgradedTokens: null,
       },
     },
@@ -203,8 +215,10 @@ export class VerificationController {
     schema: {
       example: {
         statusCode: 403,
-        message:
-          'You have reached the maximum number of verification attempts for today. Please try again tomorrow.',
+        message: 'Maximum verification attempts reached. Please try again in 24 hour(s) or contact support.',
+        retryAfterHours: 24,
+        retryAvailableAt: '2026-04-15T09:22:10.000Z',
+        retryAfterSeconds: 86399,
       },
     },
   })
@@ -275,7 +289,9 @@ export class VerificationController {
       '| `attemptsUsed` | number | Number of attempts made within the current 24-hour window |\n' +
       '| `attemptsRemaining` | number | How many more attempts are available today (max 3 per 24 h) |\n' +
       '| `canAttempt` | boolean | `true` if `attemptsRemaining > 0` and account is not yet verified |\n' +
-      '| `lastAttemptAt` | string \\| null | ISO timestamp of the most recent submission, or `null` if none |\n\n' +
+      '| `lastAttemptAt` | string \\| null | ISO timestamp of the most recent submission, or `null` if none |\n' +
+      '| `lockout.retryAvailableAt` | string \\| null | Exact retry timestamp when the user is locked out |\n' +
+      '| `lockout.retryAfterSeconds` | number \\| null | Remaining seconds until retry is allowed |\n\n' +
       '**Authentication:** Limited or full JWT access token accepted (same as `POST /submit`).',
   })
   @ApiResponse({
@@ -288,6 +304,12 @@ export class VerificationController {
         attemptsRemaining: 2,
         canAttempt: true,
         lastAttemptAt: '2024-03-19T14:33:07.000Z',
+        lockout: {
+          maxAttempts: 3,
+          attemptWindowHours: 24,
+          retryAvailableAt: null,
+          retryAfterSeconds: null,
+        },
       },
     },
   })
@@ -301,6 +323,12 @@ export class VerificationController {
         attemptsRemaining: 2,
         canAttempt: false,
         lastAttemptAt: '2024-03-15T09:22:10.000Z',
+        lockout: {
+          maxAttempts: 3,
+          attemptWindowHours: 24,
+          retryAvailableAt: null,
+          retryAfterSeconds: null,
+        },
       },
     },
   })
