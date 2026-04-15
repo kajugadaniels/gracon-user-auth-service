@@ -1,166 +1,136 @@
-# Auth Service
+# API Auth
 
-> Part of the ID Verification Platform microservice architecture.
-> Handles all user-facing authentication, registration, and identity
-> verification flows.
+Primary identity and authentication backend for the Gracon platform.
 
----
+This service owns user registration, login, email verification, password reset, refresh-token rotation, citizen lookup, profile management, and AI-backed identity verification. Every other protected backend trusts tokens issued here.
 
-## What This Service Does
+## Overview
 
-This service is the primary gateway between the user-facing application
-and the platform's data layer. It is responsible for:
+- Runtime: NestJS + TypeScript
+- Default port: `3000`
+- Database owner: shared Neon/Postgres via Prisma
+- Primary consumers: `app/app`, selective validation from other APIs
+- Special role: source of truth for user JWT issuance and shared auth schema migrations
 
-- **User registration with National ID** — validates a citizen's identity
-  against the national registry API before creating an account
-- **Email verification** — issues time-limited tokens, confirms ownership
-  of the registered email address before activating the account
-- **AI-powered ID face verification** — orchestrates the full biometric
-  verification flow: captures ID card photo and selfie, sends them to the
-  AI engine for face comparison and liveness detection, stores the audit
-  result, and upgrades the user's access token upon passing
-- **JWT authentication** — issues short-lived access tokens (15 min) and
-  long-lived refresh tokens (30 days) with full rotation support
-- **Password management** — bcrypt-hashed storage, secure reset flow via
-  email with 1-hour expiring tokens, password change with session revocation
-- **Profile management** — profile updates, profile image upload to AWS S3
-  with presigned URL serving
+## What This Service Owns
 
-This service does **not** handle admin operations. Those are handled by
-the Admin Service (`api/admin/`).
+- User registration and login
+- Full and limited JWT issuance
+- Refresh-token rotation and revocation
+- Email verification and password reset
+- Profile read/update
+- Citizen lookup integration
+- ID + selfie verification workflow via the internal engine
+- Security-event capture and token cleanup background work
 
----
+## Core Skills Needed
 
-## Architecture Position
+- NestJS authentication and authorization patterns
+- Prisma schema ownership and migration discipline
+- Secure token lifecycle design
+- Encryption-at-rest for sensitive identifiers
+- File upload validation and private S3 object handling
+- Internal-service integration with FastAPI/AWS Rekognition pipeline
+
+## Techniques Used
+
+- Access/refresh JWT split with hashed refresh-token persistence
+- Full-token vs limited-token access model
+- AES encryption for national/citizen identifiers
+- Strict throttling on brute-force and recovery endpoints
+- Private S3 upload pipeline with immediate post-processing deletion
+- Engine-to-auth internal trust using `X-Engine-API-Key`
+- Cached citizen lookups to reduce external load and timing variance
+
+## Main Modules
+
+```text
+src/
+  common/
+    aws/s3/         private upload + presigned URL handling
+    crypto/         encryption helpers
+    decorators/     current user, token type, throttling
+    guards/         JWT and throttler guards
+    mailer/         transactional email templates and sender
+    pid/            external PID validation support
+    prisma/         Prisma service/module
+    security/       helmet, CORS, docs auth, security events
+    tasks/          cleanup jobs
+  modules/
+    auth/           registration, login, refresh, logout, password reset
+    citizen/        citizen lookup and cache
+    users/          profile and account operations
+    verification/   ID verification submission and result handling
 ```
-app/app (Next.js)
-      │
-      ▼
-api/auth (this service — port 3000)
-      │                    │
-      ▼                    ▼
-Neon Postgres         engine/ (FastAPI — port 8000)
-                      AWS Rekognition
-                      AWS S3
+
+## Folder Structure
+
+```text
+api/auth/
+  docs/
+  prisma/
+  src/
+    common/
+    config/
+    modules/
+  test/
+  package.json
+  nest-cli.json
 ```
 
-The user frontend communicates exclusively with this service.
-This service communicates with the AI engine for verification,
-AWS S3 for image storage, and Neon Postgres for all persistent data.
+## Local Commands
 
----
-
-## Key Security Properties
-
-- National ID numbers (NIDs) are **AES-256-CBC encrypted** before storage
-  and never returned in plain text in any API response
-- Platform IDs (PIDs) follow the same encryption scheme
-- Passwords are **bcrypt hashed** with 12 rounds — never stored plain
-- Refresh tokens are stored as **SHA-256 hashes** — the raw token only
-  exists in the HTTP response at issuance time
-- Verification images are **never stored permanently** — uploaded to S3
-  temporarily, passed to Rekognition, deleted immediately after scoring
-- All sensitive endpoints are **rate limited** — login and registration
-  allow 5 attempts per minute, verification and password changes allow
-  3 attempts per 10 minutes
-- API documentation (`/docs`, `/redoc`) is protected by **basic auth**
-  in production and disabled from public access
-
----
-
-## Token System
-
-This service issues two token types:
-
-| Type | Expiry | Purpose |
-|---|---|---|
-| `full` | 15 minutes | Full access — all protected routes |
-| `limited` | 2 hours | Issued after email verification, before ID verification — only reaches `/verification/*` routes |
-
-After a user passes ID verification, the limited token is automatically
-upgraded to a full token without requiring a second login.
-
----
-
-## Tech Stack
-
-| Concern | Technology |
-|---|---|
-| Framework | NestJS (TypeScript) |
-| Database ORM | Prisma |
-| Database | Neon Postgres (PostgreSQL) |
-| Authentication | Passport.js + JWT |
-| Image storage | AWS S3 |
-| AI verification | AWS Rekognition via FastAPI engine |
-| Email | Nodemailer + Handlebars templates |
-| Validation | class-validator + class-transformer |
-| Rate limiting | @nestjs/throttler |
-| Security headers | helmet |
-| API docs | Swagger / OpenAPI |
-
----
-
-## Environment Variables
-
-Copy `.env.example` to `.env` and fill in all values before running.
 ```bash
-cp .env.example .env
-```
-
-See `.env.example` for the full list with generation instructions for
-secrets.
-
----
-
-## Running Locally
-```bash
-# Install dependencies
 npm install
-
-# Generate Prisma client
-npx prisma generate
-
-# Run database migrations (only this service runs migrations)
-npx prisma migrate dev
-
-# Start in development mode (hot reload)
 npm run start:dev
-
-# Start in production mode
-npm run start:prod
-```
-
-Service will be available at: `http://localhost:3000/api/v1`
-API documentation: `http://localhost:3000/docs`
-
----
-
-## Running in Production
-```bash
 npm run build
-node dist/main.js
+npm run test
+npm run lint
+npx prisma generate
 ```
 
-In production:
-- Set `APP_ENV=production` in `.env`
-- Set `DOCS_BASIC_AUTH_USER` and `DOCS_BASIC_AUTH_PASS` to protect `/docs`
-- Ensure `FRONTEND_URL` matches the deployed user app URL exactly
+## Environment Notes
 
----
+Key variables:
 
-## Related Services
-
-| Service | Location | Purpose |
-|---|---|---|
-| Admin Service | `api/admin/` | Admin operations, user management |
-| AI Engine | `engine/` | Face comparison, liveness detection |
-| User App | `app/app/` | User-facing Next.js frontend |
-| Admin App | `app/admin/` | Admin Next.js dashboard |
+```env
+APP_PORT=3000
+DATABASE_URL=
+JWT_SECRET=
+ENCRYPTION_SECRET=
+ENGINE_URL=http://localhost:8000
+ENGINE_API_KEY=
+AWS_REGION=
+AWS_ACCESS_KEY_ID=
+AWS_SECRET_ACCESS_KEY=
+AWS_S3_BUCKET_NAME=
+MAIL_HOST=
+MAIL_PORT=
+MAIL_USER=
+MAIL_PASS=
+MAIL_FROM=
 ```
 
----
+## Integration Boundaries
 
-**Git command for the README:**
-```
-git add "api/auth/README.md"
-git commit -m "docs(auth): add professional README explaining auth service purpose, architecture, and setup"
+- `app/app` is the main frontend consumer
+- Other services validate tokens issued here but should not issue their own user JWTs
+- `engine/` is internal-only and should only be called from this service
+- `api/admin` shares the database but has its own JWT boundary and should stay isolated
+
+## Important Rules
+
+- This service owns shared schema migrations
+- Never store NID/PID or refresh tokens in plain text
+- Limited-token routes must be explicit
+- Verification images must be private, temporary, and deleted after engine processing
+- Sensitive endpoints require throttling
+- Prisma queries used in responses must select only safe fields
+
+## Contribution Checklist
+
+- Decide whether a route accepts full tokens only or limited tokens too
+- Validate uploads, sizes, MIME types, and token type up front
+- Preserve the distinction between auth issuance and auth validation
+- Update `.env.example` when new required config is introduced
+
