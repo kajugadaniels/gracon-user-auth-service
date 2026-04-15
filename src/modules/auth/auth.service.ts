@@ -313,14 +313,18 @@ export class AuthService {
     };
   }
 
-  private buildSafeProfile(
+  private async buildSafeProfile(
     user: NonNullable<Awaited<ReturnType<UsersService['findByEmail']>>>,
-  ): SafeUserProfile {
+  ): Promise<SafeUserProfile> {
+    const { url: imageUrl } = await this.usersService.resolveProfileImageAccess(
+      user.imageUrl,
+    );
+
     return {
       userId: user.id,
       email: user.email,
       phoneNumber: user.phoneNumber,
-      imageUrl: user.imageUrl,
+      imageUrl,
       surName: user.citizenIdentity?.surName ?? '',
       postNames: user.citizenIdentity?.postNames ?? '',
       sex: user.citizenIdentity?.sex ?? '',
