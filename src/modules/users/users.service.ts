@@ -467,15 +467,8 @@ export class UsersService {
       ? this.encryption.decrypt(user.platformId.pidEncrypted)
       : null;
 
-    // Generate a presigned URL for the profile image if one exists
-    let profileImageUrl: string | null = null;
-    let profileImageExpiresAt: Date | null = null;
-
-    if (user.imageUrl) {
-      const presigned = await this.s3.getPresignedUrl(user.imageUrl);
-      profileImageUrl = presigned.url;
-      profileImageExpiresAt = presigned.expiresAt;
-    }
+    const { url: profileImageUrl, expiresAt: profileImageExpiresAt } =
+      await this.resolveProfileImageAccess(user.imageUrl);
 
     return {
       id: user.id,
@@ -641,6 +634,21 @@ export class UsersService {
     this.logger.log(`Profile image updated for user: ${userId}`);
 
     return { profileImageUrl: url, profileImageExpiresAt: expiresAt };
+  }
+
+  async resolveProfileImageAccess(
+    imageUrl: string | null,
+  ): Promise<{ url: string | null; expiresAt: Date | null }> {
+    if (!imageUrl) {
+      return { url: null, expiresAt: null };
+    }
+
+    if (/^https?:\/\//i.test(imageUrl)) {
+      return { url: imageUrl, expiresAt: null };
+    }
+
+    const presigned = await this.s3.getPresignedUrl(imageUrl);
+    return { url: presigned.url, expiresAt: presigned.expiresAt };
   }
 
   /**
