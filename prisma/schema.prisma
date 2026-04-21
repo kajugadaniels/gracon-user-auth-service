@@ -620,6 +620,7 @@ model Admin {
   adminRefreshTokens AdminRefreshToken[]
   adminInviteToken   AdminInviteToken?
   auditLogs          AdminAuditLog[]
+  foreignIdentitiesRegistered ForeignIdentity[] @relation("ForeignIdentityRegistrations")
 
   @@map("admins")
 }
@@ -705,6 +706,17 @@ enum AdminAction {
   ADMIN_DEACTIVATED
   ADMIN_REACTIVATED
   ADMIN_INVITE_RESENT
+  BOOTSTRAP_COMPLETED
+
+  // NEW — foreign identity service actions
+  FOREIGN_IDENTITY_REGISTERED       // admin registered a new foreign user
+  FOREIGN_IDENTITY_UPDATED          // profile updated (increments issuanceVersion)
+  FOREIGN_IDENTITY_DEACTIVATED      // soft-deleted (SUPER_ADMIN only)
+  FOREIGN_IDENTITY_REACTIVATED      // reactivated (SUPER_ADMIN only)
+  FOREIGN_IDENTITY_VIEWED           // admin viewed a foreign identity profile
+  FOREIGN_IDENTITY_PASSPORT_DECRYPTED  // SUPER_ADMIN decrypted passport (heavily logged)
+  FOREIGN_IDENTITY_IMAGE_UPLOADED   // profile image added or replaced
+  FOREIGN_IDENTITY_IMAGE_REMOVED    // profile image removed
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1079,4 +1091,113 @@ enum TemplateCategory {
   CORRESPONDENCE   // Letters, memos, official communications
   RESOLUTION       // Board resolutions, meeting minutes
   OTHER
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// FOREIGN IDENTITY SERVICE TABLES (api/foreign-identity/)
+// Owned by api/auth/ for migrations — api/foreign-identity/ only runs
+// `prisma generate` and never `prisma migrate`.
+//
+// This is Gracon 360's internal identity registry for users who cannot be
+// verified through NIDA because they do not have a Rwandan National ID.
+// Each foreign identity receives a 16-digit Foreign Identity Number (FIN)
+// that follows Rwanda's NIN structure, with position 1 always set to "2"
+// (the same digit Rwanda uses for foreigner IDs).
+// ═════════════════════════════════════════════════════════════════════════════
+
+// ─── Foreign Identities ───────────────────────────────────────────────────────
+// Represents one foreign user registered on the Gracon 360 platform.
+// Only platform admins (ADMIN or SUPER_ADMIN) can create these records.
+// The passport number is AES-256-CBC encrypted with the shared ENCRYPTION_SECRET —
+// never stored in plain text, never returned in API responses (SUPER_ADMIN
+// decrypt endpoint is the only path, with full audit logging).
+//
+// The FIN structure (16 digits) follows Rwanda's NIN exactly:
+//   Position 1     = "2" (foreigner — identical to NIDA convention)
+//   Positions 2–5  = year of birth (e.g. 1991)
+//   Position 6     = gender (8 = male, 7 = female — identical to NIDA)
+//   Positions 7–13 = sequence number (zero-padded, from FinSequence table)
+//   Position 14    = issuance version (0 = first issuance, increments on updates)
+//   Positions 15–16 = ISO 7064 MOD 97-10 checksum
+model ForeignIdentity {
+  id                       String          @id @default(uuid())
+  fin                      String          @unique                      // 16-digit Foreign Identity Number
+  finHash                  String          @unique                      // SHA-256 of the FIN — fast lookup and duplicate detection
+
+  firstName                String          @db.VarChar(100)             // plain text for display and X.509 cert subject
+  lastName                 String          @db.VarChar(100)
+
+  passportNumberEncrypted  String                                       // AES-256-CBC ciphertext (format: iv:ciphertext)
+  passportNumberHash       String          @unique                      // SHA-256 — duplicate detection without decryption
+
+  gender                   ForeignGender                                // MALE → digit 8, FEMALE → digit 7
+  dateOfBirth              DateTime                                     // supplies positions 2–5 of the FIN
+
+  countryOfOrigin          String          @db.VarChar(2)               // ISO 3166-1 alpha-2 (e.g. "KE", "UG", "US")
+  nationality              String          @db.VarChar(100)             // human-readable (e.g. "Kenyan", "American")
+  maritalStatus            MaritalStatus
+
+  // Optional profile image — always optional, a valid foreign identity
+  // exists even when no image is uploaded
+  imageUrl                 String?                                      // S3 presigned URL cached (regenerated on retrieval)
+  imageS3Key               String?                                      // S3 object key — stable reference
+
+  // Auditability — stored for traceability of the FIN generation
+  sequenceNumber           Int                                          // raw sequence used in positions 7–13
+  issuanceVersion          Int             @default(0)                  // increments on each profile update
+
+  // Lifecycle
+  isActive                 Boolean         @default(true)               // soft delete — never hard delete
+
+  // Who registered this person — always an ADMIN or SUPER_ADMIN
+  registeredByAdminId      String
+
+  createdAt                DateTime        @default(now())
+  updatedAt                DateTime        @updatedAt
+
+  registeredByAdmin        Admin           @relation("ForeignIdentityRegistrations", fields: [registeredByAdminId], references: [id])
+
+  @@index([countryOfOrigin])
+  @@index([dateOfBirth])
+  @@index([isActive, createdAt])
+  @@index([registeredByAdminId])
+  @@map("foreign_identities")
+}
+
+// ─── FIN Sequence Counters ────────────────────────────────────────────────────
+// Tracks the highest sequence number assigned per (birthYear, genderCode) group.
+// Each row represents one counter — there is exactly one row per unique
+// combination of birth year and gender.
+//
+// The registration flow atomically increments `lastSequence` inside a
+// Prisma transaction with row-level locking, eliminating race conditions
+// under concurrent registrations.
+//
+// Example rows after three registrations:
+//   { birthYear: 1991, genderCode: 7, lastSequence: 2 }   // 2 females born 1991
+//   { birthYear: 1991, genderCode: 8, lastSequence: 1 }   // 1 male born 1991
+//   { birthYear: 1988, genderCode: 8, lastSequence: 1 }   // 1 male born 1988
+model FinSequence {
+  id            String    @id @default(uuid())
+  birthYear     Int                                                     // e.g. 1991
+  genderCode    Int                                                     // 7 = female, 8 = male (Rwanda convention)
+  lastSequence  Int       @default(0)                                   // highest sequence assigned so far
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([birthYear, genderCode])                                     // one counter per year+gender combination
+  @@map("fin_sequences")
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum ForeignGender {
+  MALE      // maps to gender digit 8 in FIN position 6
+  FEMALE    // maps to gender digit 7 in FIN position 6
+}
+
+enum MaritalStatus {
+  SINGLE
+  MARRIED
+  DIVORCED
+  WIDOWED
 }
