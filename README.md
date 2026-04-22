@@ -134,3 +134,7 @@ MAIL_FROM=
 - Preserve the distinction between auth issuance and auth validation
 - Update `.env.example` when new required config is introduced
 
+## Testing Rule
+
+- If code is pure logic or can be mocked cleanly, add a unit test.
+- If code depends on Nest bootstrapping, DB wiring, or HTTP flow, prefer e2e or integration tests.
