@@ -1,4 +1,10 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+} from '@nestjs/common';
+import { IdentityType } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom, timeout } from 'rxjs';
@@ -20,7 +26,7 @@ import {
 } from './exceptions/verification.exceptions';
 import { AuthService } from '../auth/auth.service';
 import { AuthTokens } from '../auth/interfaces/auth.interface';
-import { SecurityEventService } from 'src/common/security/security-event.service';
+import { SecurityEventService } from '../../common/security/security-event.service';
 
 // Max attempts allowed within the retry window
 const MAX_ATTEMPTS = 3;
@@ -94,6 +100,7 @@ export class VerificationService {
         verificationAttempts: true,
         citizenIdentity: {
           select: {
+            identityType: true,
             nidEncrypted: true,
             surName: true,
             postNames: true,
@@ -113,6 +120,12 @@ export class VerificationService {
       throw new EmailNotVerifiedException();
     }
 
+    if (user.citizenIdentity?.identityType === IdentityType.FIN) {
+      throw new BadRequestException(
+        'Biometric verification is not required for foreign identity users.',
+      );
+    }
+
     // ── Gate 4: Already passed — idempotent response
     if (user.isIdVerified && challengeMode !== 'INVITATION') {
       throw new VerificationAlreadyPassedException();
@@ -129,8 +142,12 @@ export class VerificationService {
     if (!user.citizenIdentity) {
       throw new EmailNotVerifiedException();
     }
+    if (!user.citizenIdentity.nidEncrypted) {
+      throw new InternalServerErrorException(
+        'Stored National ID data is incomplete for verification.',
+      );
+    }
     const storedNid = this.encryption.decrypt(
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
       user.citizenIdentity.nidEncrypted,
     );
     const documentMatch = storedNid === documentNumber.trim();
@@ -283,7 +300,8 @@ export class VerificationService {
     // Build identity summary from citizen record for the result screen
     const idInfo = user.citizenIdentity
       ? {
-          fullName: `${user.citizenIdentity.surName} ${user.citizenIdentity.postNames}`.trim(),
+          fullName:
+            `${user.citizenIdentity.surName} ${user.citizenIdentity.postNames}`.trim(),
           dateOfBirth: user.citizenIdentity.dateOfBirth.toISOString(),
           documentNumber,
         }
@@ -322,7 +340,9 @@ export class VerificationService {
    * Returns the current verification status for a user.
    * Called by the frontend to determine which step to show.
    */
-  async getVerificationStatus(userId: string): Promise<VerificationStatusResult> {
+  async getVerificationStatus(
+    userId: string,
+  ): Promise<VerificationStatusResult> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -411,10 +431,7 @@ export class VerificationService {
           )
         : null;
     const retryAfterSeconds = retryAvailableAt
-      ? Math.max(
-          Math.ceil((retryAvailableAt.getTime() - Date.now()) / 1000),
-          0,
-        )
+      ? Math.max(Math.ceil((retryAvailableAt.getTime() - Date.now()) / 1000), 0)
       : null;
 
     return {
