@@ -1,22 +1,26 @@
 import {
   IsEmail,
+  IsDefined,
+  IsOptional,
   IsString,
   Length,
   Matches,
-  IsOptional,
+  ValidateIf,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class RegisterDto {
-  @ApiProperty({
+  @ApiPropertyOptional({
     description:
-      'The 16-digit National ID number of the user. Must match an existing citizen record in the national ID database.',
+      'The 16-digit National ID number of the user. Provide this for Rwanda NID registration. Mutually exclusive with `fin`.',
     example: '1199880012345678',
     minLength: 16,
     maxLength: 16,
     pattern: '^\\d{16}$',
+    required: false,
   })
+  @ValidateIf((_object, value: unknown) => value !== undefined)
   @IsString()
   // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
   @Transform(({ value }) => value?.trim())
@@ -24,7 +28,25 @@ export class RegisterDto {
   @Matches(/^\d{16}$/, {
     message: 'National ID number must contain only digits',
   })
-  documentNumber!: string;
+  documentNumber?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'The 16-digit Foreign Identity Number of the user. Provide this for foreign-identity registration. Mutually exclusive with `documentNumber`.',
+    example: '2199170000047067',
+    minLength: 16,
+    maxLength: 16,
+    pattern: '^2\\d{15}$',
+    required: false,
+  })
+  @ValidateIf((_object, value: unknown) => value !== undefined)
+  @IsString()
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+  @Transform(({ value }) => value?.trim())
+  @Matches(/^2\d{15}$/, {
+    message: 'Foreign Identity Number must be 16 digits and start with 2.',
+  })
+  fin?: string;
 
   @ApiProperty({
     description:
@@ -72,4 +94,17 @@ export class RegisterDto {
     },
   )
   password!: string;
+
+  @ValidateIf((object: RegisterDto) => !object.documentNumber && !object.fin)
+  @IsDefined({
+    message: 'Either documentNumber or fin must be provided for registration.',
+  })
+  private readonly identityInputRequired?: string;
+
+  @ValidateIf((object: RegisterDto) => !!object.documentNumber && !!object.fin)
+  @IsDefined({
+    message:
+      'Provide either documentNumber or fin, not both in the same request.',
+  })
+  private readonly identityInputExclusive?: string;
 }
