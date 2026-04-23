@@ -1,3 +1,5 @@
+import { IdentityType } from '@prisma/client';
+
 // What the registration endpoint returns to the frontend
 // Never includes sensitive fields like passwordHash, nidEncrypted, etc.
 export interface RegistrationResult {
@@ -9,5 +11,7 @@ export interface RegistrationResult {
     surName: string;
     postNames: string;
     platformId: string; // decrypted PID — shown once at registration
+    identityType: IdentityType;
+    fin: string | null;
   };
 }
