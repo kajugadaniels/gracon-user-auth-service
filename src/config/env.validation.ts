@@ -39,7 +39,7 @@ class EnvironmentVariables {
   @MinLength(32, {
     message:
       'JWT_SECRET must be at least 32 characters. ' +
-      'Generate with: node -e "console.log(require(\'crypto\').randomBytes(64).toString(\'hex\'))"',
+      "Generate with: node -e \"console.log(require('crypto').randomBytes(64).toString('hex'))\"",
   })
   JWT_SECRET!: string;
 
@@ -62,6 +62,21 @@ class EnvironmentVariables {
   @IsString()
   @IsNotEmpty({ message: 'CITIZEN_API_PASSWORD is required' })
   CITIZEN_API_PASSWORD!: string;
+
+  // ─── Foreign Identity Service ─────────────────────────────────────────────
+  @IsString()
+  @IsNotEmpty({
+    message:
+      'FOREIGN_IDENTITY_SERVICE_URL is required (URL of the foreign identity API)',
+  })
+  FOREIGN_IDENTITY_SERVICE_URL: string = 'http://localhost:3006/api/v1';
+
+  @IsString()
+  @IsNotEmpty({
+    message:
+      'FOREIGN_IDENTITY_SERVICE_TOKEN is required (admin JWT for internal foreign identity lookups)',
+  })
+  FOREIGN_IDENTITY_SERVICE_TOKEN!: string;
 
   // ─── Mailer ────────────────────────────────────────────────────────────────
   @IsString()
