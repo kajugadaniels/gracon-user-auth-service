@@ -1,8 +1,8 @@
 /**
  * Foreign identity HTTP client for api/auth.
  * The client is intentionally tiny: auth only needs read access by FIN
- * during registration, and every request must carry a dedicated service
- * admin JWT so the foreign-identity service can audit the caller.
+ * during registration, and every request uses the same NIDA-style Basic
+ * Auth pattern as the citizen API.
  */
 import {
   Injectable,
@@ -19,7 +19,7 @@ import { ForeignIdentityProfile } from './foreign-identity-profile.interface';
 export class ForeignIdentityClient {
   private readonly logger = new Logger(ForeignIdentityClient.name);
   private readonly baseUrl: string;
-  private readonly serviceToken: string;
+  private readonly basicAuthHeader: string;
 
   constructor(
     private readonly httpService: HttpService,
@@ -30,16 +30,23 @@ export class ForeignIdentityClient {
       'http://localhost:3006/api/v1'
     ).replace(/\/+$/, '');
 
-    const serviceToken = this.config.get<string>(
-      'FOREIGN_IDENTITY_SERVICE_TOKEN',
+    const username = this.config.get<string>(
+      'FOREIGN_IDENTITY_SERVICE_USERNAME',
     );
-    if (!serviceToken) {
+    const password = this.config.get<string>(
+      'FOREIGN_IDENTITY_SERVICE_PASSWORD',
+    );
+
+    if (!username || !password) {
       throw new Error(
-        'FOREIGN_IDENTITY_SERVICE_TOKEN environment variable is not set',
+        'FOREIGN_IDENTITY_SERVICE_USERNAME and FOREIGN_IDENTITY_SERVICE_PASSWORD environment variables must be set',
       );
     }
 
-    this.serviceToken = serviceToken;
+    const credentials = Buffer.from(`${username}:${password}`).toString(
+      'base64',
+    );
+    this.basicAuthHeader = `Basic ${credentials}`;
   }
 
   /**
@@ -57,7 +64,7 @@ export class ForeignIdentityClient {
           `${this.baseUrl}/foreign-identities/${encodeURIComponent(fin)}`,
           {
             headers: {
-              Authorization: `Bearer ${this.serviceToken}`,
+              Authorization: this.basicAuthHeader,
             },
           },
         ),
