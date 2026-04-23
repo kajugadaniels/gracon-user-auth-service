@@ -1,3 +1,5 @@
+import { IdentityType } from '@prisma/client';
+
 // Shapes for JWT payload and auth responses
 // Keeping these explicit prevents accidentally leaking sensitive fields
 
@@ -26,7 +28,7 @@ export interface LoginResult {
   };
 }
 
-// Safe user shape — never includes passwordHash, nidEncrypted, pidEncrypted
+// Safe user shape — never includes passwordHash, nidEncrypted, finEncrypted, pidEncrypted
 export interface SafeUserProfile {
   userId: string;
   email: string;
@@ -35,6 +37,8 @@ export interface SafeUserProfile {
   surName: string;
   postNames: string;
   sex: string;
+  identityType: IdentityType;
+  fin: string | null;
   isIdVerified: boolean;
   idVerifiedAt: Date | null;
   createdAt: Date;
