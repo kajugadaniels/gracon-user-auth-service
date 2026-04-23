@@ -50,16 +50,16 @@ export class UsersController {
   @ApiOperation({
     summary: 'Create a new user account',
     description:
-      'Registers a new account by linking a Rwandan National ID number to an email and password. ' +
+      'Registers a new account by linking either a Rwanda National ID (`documentNumber`) or a Foreign Identity Number (`fin`) to an email and password. ' +
       'The process runs 10 sequential steps in a single atomic database transaction:\n\n' +
-      '1. **NID validation** — validates the 16-digit format and calls the national citizen API to fetch the citizen record\n' +
+      '1. **Identity resolution** — `documentNumber` calls the citizen API; `fin` calls the foreign identity API and skips biometric prerequisites entirely\n' +
       '2. **Email uniqueness** — rejects if the email is already registered\n' +
-      '3. **NID uniqueness** — rejects if the NID has already been linked to another account (SHA-256 hash comparison, preventing duplicate identities)\n' +
+      '3. **Identity uniqueness** — rejects if the supplied NID or FIN has already been linked to another account (SHA-256 hash comparison, preventing duplicate identities)\n' +
       '4. **Password hashing** — bcrypt with 12 rounds (~400 ms)\n' +
-      '5. **NID encryption** — AES-256-CBC with a random IV; the encrypted value is stored and a SHA-256 hash is kept for lookup\n' +
+      '5. **Identifier encryption** — AES-256-CBC with a random IV; the encrypted NID or FIN is stored and a SHA-256 hash is kept for lookup\n' +
       '6. **Platform ID generation** — a unique identifier in the format `YYYY` + 6 random digits + `1` (e.g. `19990384729`), encrypted and hashed\n' +
       '7. **Email verification token** — 32 bytes of cryptographic randomness; the raw token goes into the email link, the SHA-256 hash is stored (expires 24 hours)\n' +
-      '8. **Atomic write** — creates `User`, `CitizenIdentity`, `PlatformId`, and `EmailVerificationToken` in one transaction\n' +
+      '8. **Atomic write** — creates `User`, `CitizenIdentity`, `PlatformId`, and `EmailVerificationToken` in one transaction; FIN users are marked `isIdVerified=true` immediately\n' +
       '9. **Verification email** — dispatched asynchronously after the transaction commits\n' +
       '10. **Platform ID disclosed** — returned once at registration; access it again later via `GET /api/v1/users/profile`\n\n' +
       'The account is inactive until the email is verified via `GET /api/v1/users/verify-email`.\n\n' +
@@ -70,7 +70,7 @@ export class UsersController {
     status: 201,
     description:
       'Account created successfully. A verification email has been sent to the provided address. ' +
-      'The Platform ID shown here is the user\'s permanent identifier within this system — store it securely.',
+      "The Platform ID shown here is the user's permanent identifier within this system — store it securely.",
     schema: {
       example: {
         success: true,
@@ -82,6 +82,8 @@ export class UsersController {
           surName: 'KWIZERA',
           postNames: 'Gervais',
           platformId: '19990384729',
+          identityType: 'NID',
+          fin: null,
         },
       },
     },
@@ -89,19 +91,32 @@ export class UsersController {
   @ApiResponse({
     status: 400,
     description:
-      'Validation failed. Common causes: NID is not exactly 16 digits, NID not found in the citizen database, ' +
+      'Validation failed. Common causes: NID/FIN format is invalid, both `documentNumber` and `fin` were supplied, neither was supplied, ' +
       'password does not meet complexity requirements, or phone number format is invalid.',
     schema: {
       example: {
         statusCode: 400,
-        message: 'No citizen record found for the provided National ID number.',
+        message:
+          'Provide either documentNumber or fin, not both in the same request.',
+      },
+    },
+  })
+  @ApiResponse({
+    status: 404,
+    description:
+      'Foreign identity registration path only: the supplied FIN does not exist or has been deactivated.',
+    schema: {
+      example: {
+        statusCode: 404,
+        message:
+          'The provided Foreign Identity Number is not registered or has been deactivated. Contact a platform administrator.',
       },
     },
   })
   @ApiResponse({
     status: 409,
     description:
-      'Conflict — either the email address or the National ID number is already linked to an existing account.',
+      'Conflict — either the email address or the supplied NID/FIN is already linked to an existing account.',
     schema: {
       example: {
         statusCode: 409,
@@ -111,7 +126,8 @@ export class UsersController {
   })
   @ApiResponse({
     status: 429,
-    description: 'Rate limit exceeded — more than 5 registration requests per minute from this IP address.',
+    description:
+      'Rate limit exceeded — more than 5 registration requests per minute from this IP address.',
     schema: {
       example: {
         statusCode: 429,
@@ -143,7 +159,7 @@ export class UsersController {
       '- The token has not already been used\n' +
       '- The token was issued fewer than 24 hours ago\n\n' +
       'On success:\n' +
-      '1. The user\'s `isVerified` and `isActive` flags are set to `true`\n' +
+      "1. The user's `isVerified` and `isActive` flags are set to `true`\n" +
       '2. The token is marked as used (cannot be replayed)\n' +
       '3. A welcome email containing the Platform ID is dispatched\n\n' +
       'After verification, proceed to `POST /api/v1/auth/login` to obtain tokens.\n\n' +
@@ -152,7 +168,8 @@ export class UsersController {
   @ApiBody({ type: VerifyEmailDto })
   @ApiResponse({
     status: 200,
-    description: 'Email verified successfully. The account is now active and the user may log in.',
+    description:
+      'Email verified successfully. The account is now active and the user may log in.',
     schema: {
       example: {
         success: true,
@@ -168,7 +185,8 @@ export class UsersController {
     schema: {
       example: {
         statusCode: 400,
-        message: 'This verification link has expired. Please request a new one.',
+        message:
+          'This verification link has expired. Please request a new one.',
       },
     },
   })
@@ -215,7 +233,8 @@ export class UsersController {
     schema: {
       example: {
         statusCode: 400,
-        message: 'You have requested too many verification emails. Please wait before trying again.',
+        message:
+          'You have requested too many verification emails. Please wait before trying again.',
       },
     },
   })
@@ -236,13 +255,15 @@ export class UsersController {
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Retrieve the authenticated user\'s profile',
+    summary: "Retrieve the authenticated user's profile",
     description:
       'Returns the full profile of the currently authenticated user. ' +
       'Sensitive fields (`passwordHash`, `nidEncrypted`, `pidEncrypted`) are **never** included in the response — ' +
       'they are stripped at the database query level using Prisma `select`.\n\n' +
       '**Computed fields returned:**\n' +
       '- `platformId` — decrypted in-memory from AES-256-CBC; never persisted in plaintext\n' +
+      '- `identityType` — indicates whether the account is backed by a Rwanda NID or a Foreign Identity Number\n' +
+      '- `fin` — returned only for FIN-backed users; NID-backed users receive `null`\n' +
       '- `profileImageUrl` — a 1-hour presigned S3 URL (not a direct S3 key); a new URL is generated on every call\n' +
       '- `profileImageExpiresAt` — the exact UTC timestamp when the presigned URL expires\n\n' +
       '**Authentication:** Full JWT access token required in `Authorization: Bearer <token>` header.',
@@ -255,7 +276,8 @@ export class UsersController {
         id: 'a3f2c1d4-8b7e-4f6a-9c2d-1e5b3a7f8d9c',
         email: 'kwizera.gervais@gmail.com',
         phoneNumber: '+250788456123',
-        imageUrl: 'profile-images/a3f2c1d4-8b7e-4f6a-9c2d-1e5b3a7f8d9c/photo.jpg',
+        imageUrl:
+          'profile-images/a3f2c1d4-8b7e-4f6a-9c2d-1e5b3a7f8d9c/photo.jpg',
         isVerified: true,
         isActive: true,
         isIdVerified: true,
@@ -263,6 +285,8 @@ export class UsersController {
         createdAt: '2024-03-10T07:45:00.000Z',
         updatedAt: '2024-03-15T09:22:14.000Z',
         platformId: '19990384729',
+        identityType: 'NID',
+        fin: null,
         profileImageUrl:
           'https://gracon-bucket.s3.amazonaws.com/profile-images/a3f2c1d4/photo.jpg?X-Amz-Signature=abc123&X-Amz-Expires=3600',
         profileImageExpiresAt: '2024-03-20T11:00:00.000Z',
@@ -278,7 +302,8 @@ export class UsersController {
   })
   @ApiResponse({
     status: 401,
-    description: 'Access token is missing, malformed, expired, or the account is inactive.',
+    description:
+      'Access token is missing, malformed, expired, or the account is inactive.',
     schema: {
       example: {
         statusCode: 401,
@@ -331,26 +356,30 @@ export class UsersController {
         isActive: false,
         isIdVerified: true,
         platformId: '19990384729',
+        identityType: 'FIN',
+        fin: '2199170000047067',
         citizenIdentity: {
-          surName: 'KWIZERA',
-          postNames: 'Gervais',
-          sex: 'M',
-          dateOfBirth: '1999-06-14T00:00:00.000Z',
-          countryOfBirth: 'Rwanda',
+          surName: 'ISHIMWE',
+          postNames: 'Patrick',
+          sex: 'MALE',
+          dateOfBirth: '1991-04-15T00:00:00.000Z',
+          countryOfBirth: 'KE',
         },
       },
     },
   })
   @ApiResponse({
     status: 401,
-    description: 'Access token is missing, malformed, expired, or the account is inactive.',
+    description:
+      'Access token is missing, malformed, expired, or the account is inactive.',
     schema: {
       example: { statusCode: 401, message: 'Unauthorized' },
     },
   })
   @ApiResponse({
     status: 409,
-    description: 'The new email address is already registered to a different account.',
+    description:
+      'The new email address is already registered to a different account.',
     schema: {
       example: {
         statusCode: 409,
@@ -400,7 +429,8 @@ export class UsersController {
         image: {
           type: 'string',
           format: 'binary',
-          description: 'Profile photo file. Accepted: JPEG, JPG, PNG, WebP. Maximum size: 5 MB.',
+          description:
+            'Profile photo file. Accepted: JPEG, JPG, PNG, WebP. Maximum size: 5 MB.',
         },
       },
     },
@@ -431,7 +461,8 @@ export class UsersController {
   })
   @ApiResponse({
     status: 401,
-    description: 'Access token is missing, malformed, expired, or the account is inactive.',
+    description:
+      'Access token is missing, malformed, expired, or the account is inactive.',
     schema: {
       example: { statusCode: 401, message: 'Unauthorized' },
     },
@@ -499,14 +530,16 @@ export class UsersController {
   })
   @ApiResponse({
     status: 401,
-    description: 'Access token is missing, malformed, expired, or the account is inactive.',
+    description:
+      'Access token is missing, malformed, expired, or the account is inactive.',
     schema: {
       example: { statusCode: 401, message: 'Unauthorized' },
     },
   })
   @ApiResponse({
     status: 429,
-    description: 'Rate limit exceeded — more than 3 password-change attempts per 10 minutes from this IP.',
+    description:
+      'Rate limit exceeded — more than 3 password-change attempts per 10 minutes from this IP.',
     schema: {
       example: {
         statusCode: 429,
@@ -522,5 +555,4 @@ export class UsersController {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call
     return this.usersService.changePassword(userId, dto);
   }
-
 }
