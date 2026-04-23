@@ -8,8 +8,9 @@
  * class-validator error object to the response when ValidationPipe throws.
  * That object contains field names, constraint keys, and sometimes the
  * reflected request value — leaking your DTO shape to any caller.
- * This filter detects the ValidationPipe array format and replaces it
- * with a fixed safe string before the response is written.
+ * This filter detects the ValidationPipe array format and returns only a
+ * single explicit message when exactly one validator failed; otherwise it
+ * falls back to a fixed safe string.
  *
  * For exceptions thrown by application service code (e.g. UnauthorizedException,
  * ConflictException with a specific message), the developer-supplied message
@@ -68,7 +69,9 @@ export class HttpExceptionFilter implements ExceptionFilter {
    * Produces a client-safe message string.
    *
    * ValidationPipe throws BadRequestException with `message` as a string[].
-   * That array contains field names and constraint keys — never send it.
+   * When there is exactly one user-facing validation message we can safely
+   * return it directly. For multi-error arrays we collapse to one generic
+   * string instead of exposing the whole DTO validation surface.
    * All other HttpException messages are strings set by application code
    * and are intentional client feedback, so they pass through.
    */
@@ -82,8 +85,17 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
     const body = exceptionResponse as Record<string, unknown>;
 
-    // ValidationPipe sets message to a string[] — strip it entirely
+    // ValidationPipe sets message to a string[] — expose only the single
+    // user-facing message when there is exactly one failure.
     if (Array.isArray(body.message)) {
+      if (
+        body.message.length === 1 &&
+        typeof body.message[0] === 'string' &&
+        body.message[0].length > 0
+      ) {
+        return body.message[0];
+      }
+
       return 'Validation failed. Check your request and try again.';
     }
 
