@@ -74,9 +74,16 @@ class EnvironmentVariables {
   @IsString()
   @IsNotEmpty({
     message:
-      'FOREIGN_IDENTITY_SERVICE_TOKEN is required (admin JWT for internal foreign identity lookups)',
+      'FOREIGN_IDENTITY_SERVICE_USERNAME is required (Basic Auth username for internal foreign identity lookups)',
   })
-  FOREIGN_IDENTITY_SERVICE_TOKEN!: string;
+  FOREIGN_IDENTITY_SERVICE_USERNAME!: string;
+
+  @IsString()
+  @IsNotEmpty({
+    message:
+      'FOREIGN_IDENTITY_SERVICE_PASSWORD is required (Basic Auth password for internal foreign identity lookups)',
+  })
+  FOREIGN_IDENTITY_SERVICE_PASSWORD!: string;
 
   // ─── Mailer ────────────────────────────────────────────────────────────────
   @IsString()
