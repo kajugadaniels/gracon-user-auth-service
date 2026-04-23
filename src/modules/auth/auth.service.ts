@@ -4,6 +4,7 @@ import {
   UnauthorizedException,
   ForbiddenException,
 } from '@nestjs/common';
+import { IdentityType } from '@prisma/client';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
@@ -19,7 +20,7 @@ import {
   LoginResult,
   SafeUserProfile,
 } from './interfaces/auth.interface';
-import { SecurityEventService } from 'src/common/security/security-event.service';
+import { SecurityEventService } from '../../common/security/security-event.service';
 
 @Injectable()
 export class AuthService {
@@ -319,6 +320,11 @@ export class AuthService {
     const { url: imageUrl } = await this.usersService.resolveProfileImageAccess(
       user.imageUrl,
     );
+    const fin =
+      user.citizenIdentity?.identityType === IdentityType.FIN &&
+      user.citizenIdentity.finEncrypted
+        ? this.encryption.decrypt(user.citizenIdentity.finEncrypted)
+        : null;
 
     return {
       userId: user.id,
@@ -328,6 +334,8 @@ export class AuthService {
       surName: user.citizenIdentity?.surName ?? '',
       postNames: user.citizenIdentity?.postNames ?? '',
       sex: user.citizenIdentity?.sex ?? '',
+      identityType: user.citizenIdentity?.identityType ?? IdentityType.NID,
+      fin,
       isIdVerified: user.isIdVerified,
       idVerifiedAt: user.idVerifiedAt ?? null,
       createdAt: user.createdAt,
