@@ -15,11 +15,13 @@ This service owns user registration, login, email verification, password reset, 
 ## What This Service Owns
 
 - User registration and login
+- Registration via Rwanda NID or Foreign Identity Number (FIN)
 - Full and limited JWT issuance
 - Refresh-token rotation and revocation
 - Email verification and password reset
 - Profile read/update
 - Citizen lookup integration
+- Foreign identity lookup integration for FIN-backed registration
 - ID + selfie verification workflow via the internal engine
 - Security-event capture and token cleanup background work
 
@@ -59,6 +61,7 @@ src/
   modules/
     auth/           registration, login, refresh, logout, password reset
     citizen/        citizen lookup and cache
+    foreign-identity/ FIN lookup client for foreign-user registration
     users/          profile and account operations
     verification/   ID verification submission and result handling
 ```
@@ -100,6 +103,8 @@ JWT_SECRET=
 ENCRYPTION_SECRET=
 ENGINE_URL=http://localhost:8000
 ENGINE_API_KEY=
+FOREIGN_IDENTITY_SERVICE_URL=http://localhost:3006/api/v1
+FOREIGN_IDENTITY_SERVICE_TOKEN=
 AWS_REGION=
 AWS_ACCESS_KEY_ID=
 AWS_SECRET_ACCESS_KEY=
@@ -110,6 +115,9 @@ MAIL_USER=
 MAIL_PASS=
 MAIL_FROM=
 ```
+
+- `FOREIGN_IDENTITY_SERVICE_URL` points at `api/foreign-identity` and is used only when a registration request supplies `fin` instead of `documentNumber`.
+- `FOREIGN_IDENTITY_SERVICE_TOKEN` must be a bearer token issued for a dedicated service admin account; auth uses it for internal service-to-service FIN lookups.
 
 ## Integration Boundaries
 
