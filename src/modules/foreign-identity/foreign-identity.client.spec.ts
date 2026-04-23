@@ -1,7 +1,8 @@
 /**
  * Foreign identity client tests.
  * The client only needs one read path, so the tests focus on status-code
- * translation rather than Nest module bootstrapping.
+ * translation and NIDA-style Basic Auth header construction rather than
+ * Nest module bootstrapping.
  */
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
@@ -71,8 +72,12 @@ describe('ForeignIdentityClient', () => {
           return 'http://localhost:3006/api/v1';
         }
 
-        if (key === 'FOREIGN_IDENTITY_SERVICE_TOKEN') {
-          return 'service-admin-token';
+        if (key === 'FOREIGN_IDENTITY_SERVICE_USERNAME') {
+          return 'service.user';
+        }
+
+        if (key === 'FOREIGN_IDENTITY_SERVICE_PASSWORD') {
+          return 'service-password';
         }
 
         return undefined;
@@ -100,6 +105,14 @@ describe('ForeignIdentityClient', () => {
     const client = createClient(httpService);
 
     await expect(client.getByFin(profile.fin)).resolves.toEqual(profile);
+    expect(httpService.get).toHaveBeenCalledWith(
+      `http://localhost:3006/api/v1/foreign-identities/${profile.fin}`,
+      {
+        headers: {
+          Authorization: `Basic ${Buffer.from('service.user:service-password').toString('base64')}`,
+        },
+      },
+    );
   });
 
   it('returns null on 404', async () => {
