@@ -15,12 +15,14 @@ import { VerificationModule } from './modules/verification/verification.module';
 import { CustomThrottlerGuard } from './common/guards/throttler.guard';
 import { DocsAuthMiddleware } from './common/security/docs-auth.middleware';
 import { SecurityEventModule } from './common/security';
+import { validateEnv } from './config/env.validation';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
+      validate: validateEnv,
     }),
 
     ThrottlerModule.forRoot([
