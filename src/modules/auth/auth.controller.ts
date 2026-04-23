@@ -47,9 +47,10 @@ export class AuthController {
       '3. **Email verified** — the account must have completed email verification\n' +
       '4. **Account active** — the account must not be suspended or deactivated\n' +
       '5. **ID verification status** — determines which token type is issued\n\n' +
-      'If the user\'s National ID has **not** yet been verified a **limited** access token is issued ' +
+      "If the user's National ID has **not** yet been verified a **limited** access token is issued " +
       '(2-hour expiry) that only unlocks `GET /api/v1/verification/status` and `POST /api/v1/verification/submit`. ' +
-      'Once ID verification passes, a **full** access token (15-minute expiry) with unrestricted access is issued.\n\n' +
+      'Once ID verification passes, a **full** access token (15-minute expiry) with unrestricted access is issued. ' +
+      'Users registered with a Foreign Identity Number already have `isIdVerified=true`, so after email verification they receive full tokens immediately.\n\n' +
       'A dummy bcrypt comparison always runs regardless of whether the user exists, ' +
       'eliminating response-time differences that could reveal valid email addresses (timing-attack prevention).\n\n' +
       '**Rate limit:** 5 requests per minute per IP address.',
@@ -74,6 +75,8 @@ export class AuthController {
             email: 'kwizera.gervais@gmail.com',
             surName: 'KWIZERA',
             postNames: 'Gervais',
+            identityType: 'NID',
+            fin: null,
             isIdVerified: true,
             idVerifiedAt: '2024-03-15T09:22:14.000Z',
           },
@@ -95,7 +98,8 @@ export class AuthController {
   })
   @ApiResponse({
     status: 429,
-    description: 'Rate limit exceeded — more than 5 login attempts per minute from this IP address.',
+    description:
+      'Rate limit exceeded — more than 5 login attempts per minute from this IP address.',
     schema: {
       example: {
         statusCode: 429,
@@ -164,7 +168,8 @@ export class AuthController {
   })
   @ApiResponse({
     status: 429,
-    description: 'Rate limit exceeded — more than 5 refresh requests per minute from this IP address.',
+    description:
+      'Rate limit exceeded — more than 5 refresh requests per minute from this IP address.',
     schema: {
       example: {
         statusCode: 429,
@@ -200,7 +205,8 @@ export class AuthController {
   @ApiBody({ type: RefreshTokenDto })
   @ApiResponse({
     status: 200,
-    description: 'Logout successful. The submitted refresh token is now permanently revoked.',
+    description:
+      'Logout successful. The submitted refresh token is now permanently revoked.',
     schema: {
       example: {
         success: true,
@@ -210,7 +216,8 @@ export class AuthController {
   })
   @ApiResponse({
     status: 401,
-    description: 'Access token is missing, malformed, expired, or the account is inactive.',
+    description:
+      'Access token is missing, malformed, expired, or the account is inactive.',
     schema: {
       example: {
         statusCode: 401,
@@ -235,7 +242,7 @@ export class AuthController {
   @ApiOperation({
     summary: 'Log out from all devices',
     description:
-      'Revokes **every** refresh token associated with the authenticated user\'s account simultaneously. ' +
+      "Revokes **every** refresh token associated with the authenticated user's account simultaneously. " +
       'This is the "sign out everywhere" action — useful after a suspected account compromise or ' +
       'after changing a password from a new device.\n\n' +
       'Devices that still hold valid access tokens will continue to work for up to 15 minutes ' +
@@ -255,7 +262,8 @@ export class AuthController {
   })
   @ApiResponse({
     status: 401,
-    description: 'Access token is missing, malformed, expired, or the account is inactive.',
+    description:
+      'Access token is missing, malformed, expired, or the account is inactive.',
     schema: {
       example: {
         statusCode: 401,
