@@ -67,7 +67,7 @@ export class VerificationController {
   @ApiOperation({
     summary: 'Submit ID card and selfie for identity verification',
     description:
-      'Runs a full biometric identity verification by comparing the user\'s selfie against the photo on their National ID card ' +
+      "Runs a full biometric identity verification by comparing the user's selfie against the photo on their National ID card " +
       'and checking face liveness. Accepts both **limited** and **full** JWT tokens — this is the endpoint ' +
       'a freshly registered user (with a limited token) calls to upgrade their account to full access.\n\n' +
       '**Seven-step processing pipeline:**\n' +
@@ -81,7 +81,7 @@ export class VerificationController {
       '6. **Audit log** — every attempt (pass or fail) is recorded with scores, IP address, and attempt number\n' +
       '7. **S3 cleanup** — both images are **permanently deleted** from S3 regardless of outcome; no biometric data is retained\n\n' +
       '**On verification pass:**\n' +
-      '- User\'s `isIdVerified` flag is set to `true`\n' +
+      "- User's `isIdVerified` flag is set to `true`\n" +
       '- All limited tokens are revoked\n' +
       '- A new **full** access token + refresh token pair is issued and returned in `upgradedTokens`\n\n' +
       '**Score fields (all values between 0.0 and 1.0):**\n' +
@@ -92,6 +92,7 @@ export class VerificationController {
       '| `documentMatch` | 1.0 if `documentNumber` matched stored NID, 0.0 otherwise |\n' +
       '| `compositeScore` | Weighted combination of all three scores |\n\n' +
       '**Authentication:** Limited or full JWT access token accepted.\n\n' +
+      '**Foreign identity users:** Accounts registered with a FIN must not call this endpoint. They are marked ID-verified at registration time and receive a 400 if biometric verification is attempted.\n\n' +
       '**Rate limit:** 3 requests per 10 minutes per IP address.',
   })
   @ApiBody({
@@ -121,7 +122,7 @@ export class VerificationController {
           type: 'string',
           format: 'binary',
           description:
-            'A live selfie photo of the applicant\'s face taken at the time of submission. ' +
+            "A live selfie photo of the applicant's face taken at the time of submission. " +
             'Accepted formats: JPEG, JPG, PNG, WebP. Maximum size: 5 MB. ' +
             'The face must be clearly visible, unobstructed, and the photo must represent a live person ' +
             '(liveness is verified by the engine).',
@@ -134,7 +135,7 @@ export class VerificationController {
     description:
       'Verification attempt processed. Check the `passed` field to determine the outcome. ' +
       'If `passed` is `true`, the `upgradedTokens` field contains a new full-access token pair — ' +
-      'replace the client\'s current tokens immediately.',
+      "replace the client's current tokens immediately.",
     schema: {
       example: {
         success: true,
@@ -143,7 +144,8 @@ export class VerificationController {
         faceScore: 0.97,
         livenessScore: 0.98,
         documentMatch: true,
-        message: 'Identity verification passed. Your account now has full access.',
+        message:
+          'Identity verification passed. Your account now has full access.',
         attemptsUsed: 1,
         attemptsRemaining: 2,
         lockout: {
@@ -180,7 +182,8 @@ export class VerificationController {
         faceScore: 0.38,
         livenessScore: 0.88,
         documentMatch: true,
-        message: 'Identity verification did not pass. Please try again with clearer photos.',
+        message:
+          'Identity verification did not pass. Please try again with clearer photos.',
         failReason: 'Face similarity score below required threshold.',
         attemptsUsed: 2,
         attemptsRemaining: 1,
@@ -199,12 +202,12 @@ export class VerificationController {
     description:
       'Submission rejected before the engine is called. Common causes: ' +
       'missing `idCard` or `selfie` file, `documentNumber` does not match the one registered at sign-up, ' +
-      'or account preconditions not met (email unverified, account inactive, or already ID-verified).',
+      'or account preconditions not met (email unverified, account inactive, already ID-verified, or FIN-based registration that does not require biometrics).',
     schema: {
       example: {
         statusCode: 400,
         message:
-          'The National ID number does not match the one used during registration.',
+          'Biometric verification is not required for foreign identity users.',
       },
     },
   })
@@ -215,7 +218,8 @@ export class VerificationController {
     schema: {
       example: {
         statusCode: 403,
-        message: 'Maximum verification attempts reached. Please try again in 24 hour(s) or contact support.',
+        message:
+          'Maximum verification attempts reached. Please try again in 24 hour(s) or contact support.',
         retryAfterHours: 24,
         retryAvailableAt: '2026-04-15T09:22:10.000Z',
         retryAfterSeconds: 86399,
@@ -231,7 +235,8 @@ export class VerificationController {
   })
   @ApiResponse({
     status: 429,
-    description: 'Rate limit exceeded — more than 3 submission requests per 10 minutes from this IP.',
+    description:
+      'Rate limit exceeded — more than 3 submission requests per 10 minutes from this IP.',
     schema: {
       example: {
         statusCode: 429,
@@ -279,7 +284,7 @@ export class VerificationController {
   @ApiOperation({
     summary: 'Get the current verification status and attempt count',
     description:
-      'Returns a lightweight summary of the authenticated user\'s ID verification state. ' +
+      "Returns a lightweight summary of the authenticated user's ID verification state. " +
       'Designed to be called on every page load of the verification UI — it is deliberately excluded ' +
       'from rate limiting because throttling a status read would degrade UX with no security benefit.\n\n' +
       '**Fields explained:**\n' +
@@ -315,7 +320,8 @@ export class VerificationController {
   })
   @ApiResponse({
     status: 200,
-    description: 'User has already passed verification — no further attempts needed.',
+    description:
+      'User has already passed verification — no further attempts needed.',
     schema: {
       example: {
         isIdVerified: true,
