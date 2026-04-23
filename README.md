@@ -104,7 +104,8 @@ ENCRYPTION_SECRET=
 ENGINE_URL=http://localhost:8000
 ENGINE_API_KEY=
 FOREIGN_IDENTITY_SERVICE_URL=http://localhost:3006/api/v1
-FOREIGN_IDENTITY_SERVICE_TOKEN=
+FOREIGN_IDENTITY_SERVICE_USERNAME=
+FOREIGN_IDENTITY_SERVICE_PASSWORD=
 AWS_REGION=
 AWS_ACCESS_KEY_ID=
 AWS_SECRET_ACCESS_KEY=
@@ -117,7 +118,7 @@ MAIL_FROM=
 ```
 
 - `FOREIGN_IDENTITY_SERVICE_URL` points at `api/foreign-identity` and is used only when a registration request supplies `fin` instead of `documentNumber`.
-- `FOREIGN_IDENTITY_SERVICE_TOKEN` must be a bearer token issued for a dedicated service admin account; auth uses it for internal service-to-service FIN lookups.
+- `FOREIGN_IDENTITY_SERVICE_USERNAME` and `FOREIGN_IDENTITY_SERVICE_PASSWORD` are the NIDA-style Basic Auth credentials used for internal FIN lookups. Use a dedicated service admin email as the username so `api/foreign-identity` can still resolve a real admin for audit logs.
 
 ## Integration Boundaries
 
