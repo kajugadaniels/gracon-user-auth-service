@@ -12,7 +12,7 @@ import { EncryptionService } from '../../common/crypto/encryption.service';
 import { AppMailerService } from '../../common/mailer/mailer.service';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
-import { SecurityEventService } from 'src/common/security/security-event.service';
+import { SecurityEventService } from '../../common/security/security-event.service';
 
 @Injectable()
 export class PasswordResetService {
