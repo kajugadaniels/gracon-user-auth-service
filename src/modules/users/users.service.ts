@@ -9,19 +9,31 @@ import {
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
+import { IdentityType } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { EncryptionService } from '../../common/crypto/encryption.service';
 import { S3Service } from '../../common/aws/s3/s3.service';
 import { PidService } from '../../common/pid/pid.service';
 import { CitizenService } from '../citizen/citizen.service';
 import { AppMailerService } from '../../common/mailer/mailer.service';
+import { ForeignIdentityClient } from '../foreign-identity/foreign-identity.client';
 import { RegisterDto } from './dto/register.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { ResendVerificationDto } from './dto/resend-verification.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { RegistrationResult } from './interfaces/registration-result.interface';
-import { SecurityEventService } from 'src/common/security/security-event.service';
+import { SecurityEventService } from '../../common/security/security-event.service';
+
+interface RegistrationIdentityRecord {
+  identityType: IdentityType;
+  identityNumber: string;
+  surName: string;
+  postNames: string;
+  sex: string;
+  dateOfBirth: Date;
+  countryOfBirth: string;
+}
 
 @Injectable()
 export class UsersService {
@@ -43,6 +55,7 @@ export class UsersService {
     private readonly s3: S3Service,
     private readonly pidService: PidService,
     private readonly citizenService: CitizenService,
+    private readonly foreignIdentityClient: ForeignIdentityClient,
     private readonly mailer: AppMailerService,
     private readonly secEvent: SecurityEventService,
   ) {}
@@ -50,10 +63,10 @@ export class UsersService {
   // ─── Registration ─────────────────────────────────────────────────────────
 
   async register(dto: RegisterDto): Promise<RegistrationResult> {
-    // ── Step 1: Validate NID format and fetch citizen data from national API
-    const citizenData = await this.citizenService.lookupCitizen(
-      dto.documentNumber,
-    );
+    this.assertExclusiveIdentityInput(dto);
+
+    // ── Step 1: Resolve the source-of-truth identity record
+    const identity = await this.resolveRegistrationIdentity(dto);
 
     // ── Step 2: Check email is not already registered
     const existingEmail = await this.prisma.user.findUnique({
@@ -67,29 +80,32 @@ export class UsersService {
       );
     }
 
-    // ── Step 3: Check NID is not already registered
-    // We can't query encrypted NID directly — hash the NID and check against
-    // all stored hashes. PID hash approach — we hash NID for lookup too
-    const nidHash = this.encryption.hash(dto.documentNumber);
-    const existingNid = await this.prisma.citizenIdentity.findFirst({
-      where: { nidHash }, // nidHash column added for lookup — see schema update below
+    // ── Step 3: Check the identity number is not already registered
+    const identityHash = this.encryption.hash(identity.identityNumber);
+    const existingIdentity = await this.prisma.citizenIdentity.findFirst({
+      where:
+        identity.identityType === IdentityType.NID
+          ? { nidHash: identityHash }
+          : { finHash: identityHash },
       select: { id: true },
     });
 
-    if (existingNid) {
+    if (existingIdentity) {
       throw new ConflictException(
-        'An account with this National ID is already registered',
+        identity.identityType === IdentityType.NID
+          ? 'An account with this National ID is already registered'
+          : 'An account with this Foreign Identity Number is already registered',
       );
     }
 
     // ── Step 4: Hash the password — never store plain text
     const passwordHash = await bcrypt.hash(dto.password, this.BCRYPT_ROUNDS);
 
-    // ── Step 5: Encrypt the NID — stored as AES-256-CBC ciphertext
-    const nidEncrypted = this.encryption.encrypt(dto.documentNumber);
+    // ── Step 5: Encrypt the source identity number
+    const identityEncrypted = this.encryption.encrypt(identity.identityNumber);
 
     // ── Step 6: Generate Platform ID and encrypt it
-    const rawPid = this.pidService.generate(citizenData.dateOfBirth);
+    const rawPid = this.pidService.generate(identity.dateOfBirth);
     const pidEncrypted = this.encryption.encrypt(rawPid);
     const pidHash = this.encryption.hash(rawPid); // for uniqueness check and lookup
 
@@ -98,6 +114,7 @@ export class UsersService {
     const rawToken = crypto.randomBytes(32).toString('hex'); // 64-char hex string
     const tokenHash = this.encryption.hash(rawToken);
     const tokenExpiry = new Date(Date.now() + this.TOKEN_EXPIRY_MS);
+    const isFinIdentity = identity.identityType === IdentityType.FIN;
 
     // ── Step 8: Persist everything atomically in a Prisma transaction
     // If ANY step fails, ALL changes are rolled back — no partial data
@@ -113,21 +130,26 @@ export class UsersService {
             passwordHash,
             isVerified: false, // requires email confirmation
             isActive: false, // activated only after email is verified
+            isIdVerified: isFinIdentity,
+            idVerifiedAt: isFinIdentity ? new Date() : null,
           },
           select: { id: true, email: true },
         });
 
-        // Store encrypted NID with a hash for future lookups
+        // Store the registry-specific identity reference.
         await tx.citizenIdentity.create({
           data: {
             userId: user.id,
-            nidEncrypted,
-            nidHash, // SHA-256 of raw NID — for duplicate checks
-            surName: citizenData.surName,
-            postNames: citizenData.postNames,
-            sex: citizenData.sex,
-            dateOfBirth: citizenData.dateOfBirth,
-            countryOfBirth: citizenData.countryOfBirth,
+            identityType: identity.identityType,
+            nidEncrypted: isFinIdentity ? null : identityEncrypted,
+            nidHash: isFinIdentity ? null : identityHash,
+            finEncrypted: isFinIdentity ? identityEncrypted : null,
+            finHash: isFinIdentity ? identityHash : null,
+            surName: identity.surName,
+            postNames: identity.postNames,
+            sex: identity.sex,
+            dateOfBirth: identity.dateOfBirth,
+            countryOfBirth: identity.countryOfBirth,
           },
         });
 
@@ -156,9 +178,13 @@ export class UsersService {
       createdUser = result;
     } catch (error) {
       // Prisma unique constraint violation — race condition safety
-      if (typeof error === 'object' && error !== null && (error as Record<string, unknown>)['code'] === 'P2002') {
+      if (
+        typeof error === 'object' &&
+        error !== null &&
+        (error as Record<string, unknown>)['code'] === 'P2002'
+      ) {
         throw new ConflictException(
-          'An account with this email or National ID already exists',
+          'An account with this email or identity number already exists',
         );
       }
 
@@ -171,8 +197,8 @@ export class UsersService {
     // ── Step 9: Send verification email (outside transaction — non-blocking)
     await this.mailer.sendVerificationEmail({
       to: createdUser.email,
-      surName: citizenData.surName,
-      postNames: citizenData.postNames,
+      surName: identity.surName,
+      postNames: identity.postNames,
       userId: createdUser.id,
       token: rawToken, // raw token in the email link
     });
@@ -187,9 +213,11 @@ export class UsersService {
       data: {
         userId: createdUser.id,
         email: createdUser.email,
-        surName: citizenData.surName,
-        postNames: citizenData.postNames,
+        surName: identity.surName,
+        postNames: identity.postNames,
         platformId: rawPid, // shown once at registration — not stored in plain text
+        identityType: identity.identityType,
+        fin: isFinIdentity ? identity.identityNumber : null,
       },
     };
   }
@@ -368,6 +396,75 @@ export class UsersService {
     return safeResponse;
   }
 
+  private assertExclusiveIdentityInput(dto: RegisterDto): void {
+    if (dto.documentNumber && dto.fin) {
+      throw new BadRequestException(
+        'Provide either documentNumber or fin, not both in the same request.',
+      );
+    }
+
+    if (!dto.documentNumber && !dto.fin) {
+      throw new BadRequestException(
+        'Either documentNumber or fin must be provided for registration.',
+      );
+    }
+  }
+
+  private async resolveRegistrationIdentity(
+    dto: RegisterDto,
+  ): Promise<RegistrationIdentityRecord> {
+    if (dto.fin) {
+      return this.resolveForeignRegistrationIdentity(dto.fin);
+    }
+
+    return this.resolveCitizenRegistrationIdentity(dto.documentNumber!);
+  }
+
+  private async resolveCitizenRegistrationIdentity(
+    documentNumber: string,
+  ): Promise<RegistrationIdentityRecord> {
+    const citizenData = await this.citizenService.lookupCitizen(documentNumber);
+
+    return {
+      identityType: IdentityType.NID,
+      identityNumber: documentNumber,
+      surName: citizenData.surName,
+      postNames: citizenData.postNames,
+      sex: citizenData.sex,
+      dateOfBirth: citizenData.dateOfBirth,
+      countryOfBirth: citizenData.countryOfBirth,
+    };
+  }
+
+  private async resolveForeignRegistrationIdentity(
+    fin: string,
+  ): Promise<RegistrationIdentityRecord> {
+    const foreignIdentity = await this.foreignIdentityClient.getByFin(fin);
+
+    if (!foreignIdentity || !foreignIdentity.isActive) {
+      throw new NotFoundException(
+        'The provided Foreign Identity Number is not registered or has been deactivated. Contact a platform administrator.',
+      );
+    }
+
+    const dateOfBirth = new Date(foreignIdentity.dateOfBirth);
+    if (Number.isNaN(dateOfBirth.getTime())) {
+      throw new InternalServerErrorException(
+        'Foreign identity lookup returned an invalid date of birth.',
+      );
+    }
+
+    return {
+      identityType: IdentityType.FIN,
+      identityNumber: foreignIdentity.fin,
+      surName: foreignIdentity.lastName,
+      postNames: foreignIdentity.firstName,
+      sex: foreignIdentity.gender,
+      dateOfBirth,
+      countryOfBirth: foreignIdentity.countryOfOrigin,
+    };
+  }
+
   // ─── Internal helpers ─────────────────────────────────────────────────────
 
   // Used by AuthService to find a user by email for login
@@ -387,6 +484,8 @@ export class UsersService {
         phoneNumber: true,
         citizenIdentity: {
           select: {
+            identityType: true,
+            finEncrypted: true,
             surName: true,
             postNames: true,
             sex: true,
@@ -426,7 +525,7 @@ export class UsersService {
    *   stored in plain text.
    * - If the user has a profile image, a 1-hour presigned S3 URL is generated
    *   so the browser can display it without exposing the raw S3 key.
-   * - passwordHash, nidEncrypted, and pidEncrypted are never returned.
+   * - passwordHash, nidEncrypted, finEncrypted, and pidEncrypted are never returned.
    */
   async getProfile(userId: string) {
     const user = await this.prisma.user.findUnique({
@@ -445,6 +544,8 @@ export class UsersService {
         updatedAt: true,
         citizenIdentity: {
           select: {
+            identityType: true,
+            finEncrypted: true,
             surName: true,
             postNames: true,
             sex: true,
@@ -466,6 +567,11 @@ export class UsersService {
     const platformId = user.platformId
       ? this.encryption.decrypt(user.platformId.pidEncrypted)
       : null;
+    const fin =
+      user.citizenIdentity?.identityType === IdentityType.FIN &&
+      user.citizenIdentity.finEncrypted
+        ? this.encryption.decrypt(user.citizenIdentity.finEncrypted)
+        : null;
 
     const { url: profileImageUrl, expiresAt: profileImageExpiresAt } =
       await this.resolveProfileImageAccess(user.imageUrl);
@@ -481,6 +587,8 @@ export class UsersService {
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
       platformId,
+      identityType: user.citizenIdentity?.identityType ?? IdentityType.NID,
+      fin,
       profileImageUrl,
       profileImageExpiresAt,
       citizenIdentity: user.citizenIdentity
@@ -509,7 +617,11 @@ export class UsersService {
     // Load the current user to compare values
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, email: true, citizenIdentity: { select: { surName: true, postNames: true } } },
+      select: {
+        id: true,
+        email: true,
+        citizenIdentity: { select: { surName: true, postNames: true } },
+      },
     });
 
     if (!user) {
