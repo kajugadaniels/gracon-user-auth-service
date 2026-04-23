@@ -8,7 +8,7 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
+  provider = "postgresql"
 }
 
 // ─── Users ────────────────────────────────────────────────────────────────────
@@ -26,14 +26,31 @@ model User {
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
-  citizenIdentity        CitizenIdentity?
-  platformId             PlatformId?
-  emailVerificationToken EmailVerificationToken?
-  idVerifications        IdVerification[]
-  refreshTokens          RefreshToken[]
-  passwordResetTokens    PasswordResetToken[]
+  citizenIdentity                        CitizenIdentity?
+  platformId                             PlatformId?
+  emailVerificationToken                 EmailVerificationToken?
+  idVerifications                        IdVerification[]
+  refreshTokens                          RefreshToken[]
+  passwordResetTokens                    PasswordResetToken[]
   // Security events written by auth service — read by admin service
-  securityEvents         SecurityEventLog[]
+  securityEvents                         SecurityEventLog[]
+  personalSignedDocuments                PersonalSignedDocument[]
+  personalSignatureImages                PersonalSignatureImage[]
+  personalKeyPairs                       PersonalKeyPair[]
+  personalCertificates                   PersonalCertificate[]
+  institutionMembers                     InstitutionMember[]
+  institutionStamps                      InstitutionStamp[]
+  signatureRequestsMade                  DocumentSignatureRequest[]              @relation("SignatureRequestor")
+  documents                              Document[]                              @relation("DocumentOwner")
+  documentFolders                        DocumentFolder[]
+  documentCollaborators                  DocumentCollaborator[]                  @relation("DocumentCollaboratorRecipient")
+  documentInvitationsSent                DocumentCollaborator[]                  @relation("DocumentInviteSender")
+  documentInvitationVerificationSessions DocumentInvitationVerificationSession[]
+  documentVersions                       DocumentVersion[]
+  documentComments                       DocumentComment[]
+  signatureRequestsReceived              DocumentSignatureRequest[]              @relation("SignatureRespondent")
+  documentAccessAuditEventsActed         DocumentAccessAuditLog[]                @relation("DocumentAccessAuditActor")
+  documentAccessAuditEventsTargeted      DocumentAccessAuditLog[]                @relation("DocumentAccessAuditTarget")
 
   // ── Query pattern indexes ──────────────────────────────────────────────────
   // isActive and isIdVerified are boolean but queried with equality predicates
@@ -45,41 +62,35 @@ model User {
   @@index([isActive, createdAt])
   @@index([isVerified, isIdVerified, createdAt])
   @@map("users")
-  personalSignedDocuments PersonalSignedDocument[]
-  personalSignatureImages PersonalSignatureImage[]
-  personalKeyPairs PersonalKeyPair[]
-  personalCertificates PersonalCertificate[]
-  institutionMembers InstitutionMember[]
-  institutionStamps InstitutionStamp[]
-  signatureRequestsMade DocumentSignatureRequest[] @relation("SignatureRequestor")
-  documents Document[] @relation("DocumentOwner")
-  documentFolders DocumentFolder[]
-  documentCollaborators DocumentCollaborator[] @relation("DocumentCollaboratorRecipient")
-  documentInvitationsSent DocumentCollaborator[] @relation("DocumentInviteSender")
-  documentInvitationVerificationSessions DocumentInvitationVerificationSession[]
-  documentVersions DocumentVersion[]
-  documentComments DocumentComment[]
-  signatureRequestsReceived DocumentSignatureRequest[] @relation("SignatureRespondent")
-  documentAccessAuditEventsActed DocumentAccessAuditLog[] @relation("DocumentAccessAuditActor")
-  documentAccessAuditEventsTargeted DocumentAccessAuditLog[] @relation("DocumentAccessAuditTarget")
 }
 
 // ─── Citizen Identities ───────────────────────────────────────────────────────
 model CitizenIdentity {
-  id             String   @id @default(uuid())
-  userId         String   @unique
-  nidEncrypted   String
-  nidHash        String   @unique
+  id             String       @id @default(uuid())
+  userId         String       @unique
+  identityType   IdentityType @default(NID)
+  nidEncrypted   String?
+  nidHash        String?      @unique
+  finEncrypted   String?
+  finHash        String?      @unique
   surName        String
   postNames      String
   sex            String
   dateOfBirth    DateTime
   countryOfBirth String
-  createdAt      DateTime @default(now())
+  createdAt      DateTime     @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([identityType, userId])
   @@map("citizen_identities")
+}
+
+enum IdentityType {
+  NID
+  FIN
+
+  @@map("IDENTITY_TYPE")
 }
 
 // ─── Platform IDs ─────────────────────────────────────────────────────────────
@@ -174,7 +185,7 @@ model SecurityEventLog {
   id        String        @id @default(uuid())
   userId    String?
   eventType SecurityEvent
-  metadata  Json?         // IP, attempt count, user agent, any extra context
+  metadata  Json? // IP, attempt count, user agent, any extra context
   ipAddress String?
   createdAt DateTime      @default(now())
 
@@ -220,11 +231,11 @@ enum SecurityEvent {
 // One active image per user at all times (enforced by isActive flag).
 model PersonalSignatureImage {
   id        String   @id @default(uuid())
-  userId    String                           // which user this belongs to
-  s3Key     String                           // private S3 object key — never exposed directly
-  mimeType  String                           // image/png or image/svg+xml only
-  sizeBytes Int                              // file size in bytes — max 2MB enforced at controller
-  isActive  Boolean  @default(true)          // false = soft-deleted, still in S3
+  userId    String // which user this belongs to
+  s3Key     String // private S3 object key — never exposed directly
+  mimeType  String // image/png or image/svg+xml only
+  sizeBytes Int // file size in bytes — max 2MB enforced at controller
+  isActive  Boolean  @default(true) // false = soft-deleted, still in S3
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -243,17 +254,17 @@ model PersonalSignatureImage {
 // In production (CloudHSM): privateKeyEncrypted will be null and keyHandle
 // will hold the HSM key reference instead.
 model PersonalKeyPair {
-  id                  String             @id @default(uuid())
-  userId              String                                    // which user owns this key pair
-  algorithm           PersonalKeyAlgorithm                      // RSA_2048 or ED25519
-  publicKey           String             @db.Text               // PEM format — stored plain
-  privateKeyEncrypted String?            @db.Text               // AES-256-CBC encrypted PEM (null if HSM)
-  keyHandle           String?                                   // CloudHSM key reference (null if software)
-  fingerprint         String                                    // SHA-256 of public key — for quick lookup
-  isActive            Boolean            @default(true)         // false when rotated
-  createdAt           DateTime           @default(now())
+  id                  String               @id @default(uuid())
+  userId              String // which user owns this key pair
+  algorithm           PersonalKeyAlgorithm // RSA_2048 or ED25519
+  publicKey           String               @db.Text // PEM format — stored plain
+  privateKeyEncrypted String?              @db.Text // AES-256-CBC encrypted PEM (null if HSM)
+  keyHandle           String? // CloudHSM key reference (null if software)
+  fingerprint         String // SHA-256 of public key — for quick lookup
+  isActive            Boolean              @default(true) // false when rotated
+  createdAt           DateTime             @default(now())
 
-  user                User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   personalCertificate PersonalCertificate?
 
   @@index([userId])
@@ -273,26 +284,26 @@ enum PersonalKeyAlgorithm {
 // Subject fields are populated from the citizen_identities table at issuance time.
 // Once revoked, a certificate CANNOT be un-revoked — it is permanent.
 model PersonalCertificate {
-  id              String    @id @default(uuid())
-  userId          String                                    // which user holds this certificate
-  keyPairId       String    @unique                         // which key pair this cert is tied to
-  serialNumber    String    @unique                         // UUID — used for CRL and OCSP
+  id             String    @id @default(uuid())
+  userId         String // which user holds this certificate
+  keyPairId      String    @unique // which key pair this cert is tied to
+  serialNumber   String    @unique // UUID — used for CRL and OCSP
   // Subject stored as flat fields for queryability — also embedded in certificatePem
-  subjectCN       String                                   // CN = "FirstName LastName" (from NIDA data)
-  subjectO        String    @default("ID Verification Platform")
-  subjectC        String    @default("RW")
-  subjectUserId   String                                   // SAN = userId — ties cert to platform account
-  notBefore       DateTime                                 // certificate validity start
-  notAfter        DateTime                                 // certificate validity end (2 years default)
-  certificatePem  String    @db.Text                       // full X.509 PEM — what third parties verify
-  isRevoked       Boolean   @default(false)
-  revokedAt       DateTime?
-  revokedReason   String?                                  // required when revoking
-  createdAt       DateTime  @default(now())
+  subjectCN      String // CN = "FirstName LastName" (from NIDA data)
+  subjectO       String    @default("ID Verification Platform")
+  subjectC       String    @default("RW")
+  subjectUserId  String // SAN = userId — ties cert to platform account
+  notBefore      DateTime // certificate validity start
+  notAfter       DateTime // certificate validity end (2 years default)
+  certificatePem String    @db.Text // full X.509 PEM — what third parties verify
+  isRevoked      Boolean   @default(false)
+  revokedAt      DateTime?
+  revokedReason  String? // required when revoking
+  createdAt      DateTime  @default(now())
 
-  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  keyPair     PersonalKeyPair @relation(fields: [keyPairId], references: [id])
-  signedDocs  PersonalSignedDocument[]
+  user          User                            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  keyPair       PersonalKeyPair                 @relation(fields: [keyPairId], references: [id])
+  signedDocs    PersonalSignedDocument[]
   verifications PersonalSignatureVerification[]
 
   @@index([userId])
@@ -309,13 +320,13 @@ model PersonalCertificate {
 // The document itself is never stored here — only its hash.
 model PersonalSignedDocument {
   id             String   @id @default(uuid())
-  userId         String                         // who signed
-  certificateId  String                         // which certificate was active at signing time
-  documentName   String                         // human-readable name provided by caller
-  documentHash   String                         // SHA-256 hex of the document — 64 chars
-  signatureBytes String   @db.Text              // base64-encoded cryptographic signature
-  metadata       Json?                          // optional: page count, document type, etc.
-  signedAt       DateTime @default(now())       // server-side timestamp — never client-provided
+  userId         String // who signed
+  certificateId  String // which certificate was active at signing time
+  documentName   String // human-readable name provided by caller
+  documentHash   String // SHA-256 hex of the document — 64 chars
+  signatureBytes String   @db.Text // base64-encoded cryptographic signature
+  metadata       Json? // optional: page count, document type, etc.
+  signedAt       DateTime @default(now()) // server-side timestamp — never client-provided
 
   user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   certificate PersonalCertificate @relation(fields: [certificateId], references: [id])
@@ -332,14 +343,14 @@ model PersonalSignedDocument {
 // verifiedByUserId is null when a third party (unauthenticated) calls /verify.
 // This gives full auditability of who checked whose signatures and when.
 model PersonalSignatureVerification {
-  id                String    @id @default(uuid())
-  certificateId     String                         // whose certificate was verified
-  verifiedByUserId  String?                        // null = public/third-party verification
-  documentHash      String                         // the hash that was submitted for checking
-  result            Boolean                        // true = valid, false = invalid/tampered
-  failReason        String?                        // why it failed if result = false
-  ipAddress         String?
-  createdAt         DateTime  @default(now())
+  id               String   @id @default(uuid())
+  certificateId    String // whose certificate was verified
+  verifiedByUserId String? // null = public/third-party verification
+  documentHash     String // the hash that was submitted for checking
+  result           Boolean // true = valid, false = invalid/tampered
+  failReason       String? // why it failed if result = false
+  ipAddress        String?
+  createdAt        DateTime @default(now())
 
   certificate PersonalCertificate @relation(fields: [certificateId], references: [id])
 
@@ -360,22 +371,22 @@ model PersonalSignatureVerification {
 // Institutions are created by SUPER_ADMIN only — never self-registered.
 // registrationNumber is the official RDB (Rwanda Development Board) company number.
 model Institution {
-  id                 String              @id @default(uuid())
-  name               String                                    // official full legal name
-  type               InstitutionType                           // COMPANY, NGO, GOVERNMENT, OTHER
-  registrationNumber String              @unique               // RDB or equivalent registration number
-  country            String              @default("RW")
-  isActive           Boolean             @default(true)        // SUPER_ADMIN can deactivate
-  createdByAdminId   String?                                   // which SUPER_ADMIN created this
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
+  id                 String          @id @default(uuid())
+  name               String // official full legal name
+  type               InstitutionType // COMPANY, NGO, GOVERNMENT, OTHER
+  registrationNumber String          @unique // RDB or equivalent registration number
+  country            String          @default("RW")
+  isActive           Boolean         @default(true) // SUPER_ADMIN can deactivate
+  createdByAdminId   String? // which SUPER_ADMIN created this
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
 
-  members            InstitutionMember[]
-  keyPairs           InstitutionKeyPair[]
-  certificates       InstitutionCertificate[]
-  stampImages        InstitutionStampImage[]
-  resolutions        AuthorityResolution[]
-  stamps             InstitutionStamp[]
+  members      InstitutionMember[]
+  keyPairs     InstitutionKeyPair[]
+  certificates InstitutionCertificate[]
+  stampImages  InstitutionStampImage[]
+  resolutions  AuthorityResolution[]
+  stamps       InstitutionStamp[]
 
   @@index([registrationNumber])
   @@map("institutions")
@@ -395,20 +406,20 @@ enum InstitutionType {
 // Only an institution admin (hasAdminRole = true) can grant stampAuthority.
 // Authority is always traced back to an AuthorityResolution.
 model InstitutionMember {
-  id               String    @id @default(uuid())
-  userId           String                         // verified user who is a member
-  institutionId    String                         // which institution
-  roleTitle        String                         // e.g. "Finance Director", "CEO"
-  hasAdminRole     Boolean   @default(false)      // can manage this institution's members
-  stampAuthority   Boolean   @default(false)      // can perform stamp operations
-  resolutionId     String?                        // which AuthorityResolution grants stamp authority
-  isActive         Boolean   @default(true)       // false = membership revoked
-  addedByUserId    String?                        // which institution admin added this member
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  id             String   @id @default(uuid())
+  userId         String // verified user who is a member
+  institutionId  String // which institution
+  roleTitle      String // e.g. "Finance Director", "CEO"
+  hasAdminRole   Boolean  @default(false) // can manage this institution's members
+  stampAuthority Boolean  @default(false) // can perform stamp operations
+  resolutionId   String? // which AuthorityResolution grants stamp authority
+  isActive       Boolean  @default(true) // false = membership revoked
+  addedByUserId  String? // which institution admin added this member
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  institution Institution        @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  user        User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  institution Institution          @relation(fields: [institutionId], references: [id], onDelete: Cascade)
   resolution  AuthorityResolution? @relation(fields: [resolutionId], references: [id])
 
   // Unique: one active membership record per user per institution
@@ -426,19 +437,19 @@ model InstitutionMember {
 // Resolutions are NEVER deleted — they form part of the legal audit chain.
 model AuthorityResolution {
   id            String    @id @default(uuid())
-  institutionId String                         // which institution this resolution belongs to
-  title         String                         // e.g. "Board Resolution 2026-Q1-001"
-  scope         String                         // what this resolution authorises (free text)
-  grantedBy     String                         // name/title of the authority who granted this
-  isActive      Boolean   @default(true)       // false = revoked — members using this lose authority
+  institutionId String // which institution this resolution belongs to
+  title         String // e.g. "Board Resolution 2026-Q1-001"
+  scope         String // what this resolution authorises (free text)
+  grantedBy     String // name/title of the authority who granted this
+  isActive      Boolean   @default(true) // false = revoked — members using this lose authority
   revokedAt     DateTime?
   revokedReason String?
-  validFrom     DateTime                       // resolution effective date
-  validUntil    DateTime?                      // null = no expiry, otherwise explicit end date
+  validFrom     DateTime // resolution effective date
+  validUntil    DateTime? // null = no expiry, otherwise explicit end date
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  institution Institution        @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  institution Institution         @relation(fields: [institutionId], references: [id], onDelete: Cascade)
   members     InstitutionMember[]
   stamps      InstitutionStamp[]
 
@@ -451,15 +462,15 @@ model AuthorityResolution {
 // Same pattern as PersonalSignatureImage — purely decorative, no crypto value.
 // One active stamp image per institution at all times.
 model InstitutionStampImage {
-  id            String    @id @default(uuid())
-  institutionId String                         // which institution
-  s3Key         String                         // private S3 key — never exposed directly
-  mimeType      String                         // image/png or image/svg+xml only
-  sizeBytes     Int
-  isActive      Boolean   @default(true)
-  uploadedByUserId String?                     // which institution admin uploaded this
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id               String   @id @default(uuid())
+  institutionId    String // which institution
+  s3Key            String // private S3 key — never exposed directly
+  mimeType         String // image/png or image/svg+xml only
+  sizeBytes        Int
+  isActive         Boolean  @default(true)
+  uploadedByUserId String? // which institution admin uploaded this
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   institution Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
 
@@ -475,14 +486,14 @@ model InstitutionStampImage {
 // In production (CloudHSM): privateKeyEncrypted = null, keyHandle = HSM reference.
 model InstitutionKeyPair {
   id                  String                  @id @default(uuid())
-  institutionId       String                                         // which institution owns this
-  algorithm           InstitutionKeyAlgorithm                        // RSA_2048 or ED25519
-  publicKey           String                  @db.Text               // PEM — stored plain
-  privateKeyEncrypted String?                 @db.Text               // AES-256-CBC encrypted (null if HSM)
-  keyHandle           String?                                        // CloudHSM key reference
-  fingerprint         String                                         // SHA-256 of public key
-  isActive            Boolean                 @default(true)         // false when rotated
-  generatedByUserId   String?                                        // which institution admin generated
+  institutionId       String // which institution owns this
+  algorithm           InstitutionKeyAlgorithm // RSA_2048 or ED25519
+  publicKey           String                  @db.Text // PEM — stored plain
+  privateKeyEncrypted String?                 @db.Text // AES-256-CBC encrypted (null if HSM)
+  keyHandle           String? // CloudHSM key reference
+  fingerprint         String // SHA-256 of public key
+  isActive            Boolean                 @default(true) // false when rotated
+  generatedByUserId   String? // which institution admin generated
   createdAt           DateTime                @default(now())
 
   institution            Institution             @relation(fields: [institutionId], references: [id], onDelete: Cascade)
@@ -508,26 +519,26 @@ enum InstitutionKeyAlgorithm {
 // The institution certificate is the second signature verified in every stamp check.
 model InstitutionCertificate {
   id              String    @id @default(uuid())
-  institutionId   String                         // which institution holds this certificate
-  keyPairId       String    @unique              // which institution key pair this cert is tied to
-  serialNumber    String    @unique              // UUID — for CRL and OCSP
-  subjectCN       String                         // CN = institution name
+  institutionId   String // which institution holds this certificate
+  keyPairId       String    @unique // which institution key pair this cert is tied to
+  serialNumber    String    @unique // UUID — for CRL and OCSP
+  subjectCN       String // CN = institution name
   subjectO        String    @default("ID Verification Platform")
   subjectOU       String    @default("Institutional Certificate")
   subjectC        String    @default("RW")
-  subjectInstId   String                         // SAN = institutionId
+  subjectInstId   String // SAN = institutionId
   notBefore       DateTime
   notAfter        DateTime
   certificatePem  String    @db.Text
   isRevoked       Boolean   @default(false)
   revokedAt       DateTime?
   revokedReason   String?
-  issuedByAdminId String?                        // which admin triggered issuance
+  issuedByAdminId String? // which admin triggered issuance
   createdAt       DateTime  @default(now())
 
-  institution   Institution        @relation(fields: [institutionId], references: [id], onDelete: Cascade)
-  keyPair       InstitutionKeyPair @relation(fields: [keyPairId], references: [id])
-  stamps        InstitutionStamp[]
+  institution Institution        @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  keyPair     InstitutionKeyPair @relation(fields: [keyPairId], references: [id])
+  stamps      InstitutionStamp[]
 
   @@index([institutionId])
   @@index([serialNumber])
@@ -544,20 +555,20 @@ model InstitutionCertificate {
 // institutionCertificateId links to the institution's certificate at time of stamping.
 // Records are NEVER deleted — they are the legal proof of institutional action.
 model InstitutionStamp {
-  id                       String    @id @default(uuid())
-  institutionId            String                         // which institution stamped
-  userId                   String                         // which individual performed the stamp
-  memberId                 String                         // which InstitutionMember record authorised this
-  resolutionId             String                         // which AuthorityResolution backed this action
-  institutionCertificateId String                         // institution cert used for stamp 1
-  personalCertificateId    String                         // user's personal cert used for stamp 2
-  documentName             String                         // human-readable name
-  documentHash             String                         // SHA-256 hex of the document
-  institutionSignatureBytes String   @db.Text              // base64 — institution's crypto signature
-  userSignatureBytes        String   @db.Text              // base64 — individual's crypto signature
-  roleTitle                String                         // role at time of stamping — snapshot
-  metadata                 Json?                          // optional extra context
-  stampedAt                DateTime  @default(now())      // server-side timestamp
+  id                        String   @id @default(uuid())
+  institutionId             String // which institution stamped
+  userId                    String // which individual performed the stamp
+  memberId                  String // which InstitutionMember record authorised this
+  resolutionId              String // which AuthorityResolution backed this action
+  institutionCertificateId  String // institution cert used for stamp 1
+  personalCertificateId     String // user's personal cert used for stamp 2
+  documentName              String // human-readable name
+  documentHash              String // SHA-256 hex of the document
+  institutionSignatureBytes String   @db.Text // base64 — institution's crypto signature
+  userSignatureBytes        String   @db.Text // base64 — individual's crypto signature
+  roleTitle                 String // role at time of stamping — snapshot
+  metadata                  Json? // optional extra context
+  stampedAt                 DateTime @default(now()) // server-side timestamp
 
   institution            Institution            @relation(fields: [institutionId], references: [id])
   user                   User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -576,17 +587,17 @@ model InstitutionStamp {
 // Both signature bytes and both verification results are recorded independently
 // so that partial failures (e.g. institution sig valid but user sig invalid) are auditable.
 model InstitutionStampVerification {
-  id                       String    @id @default(uuid())
-  institutionCertificateId String                         // institution cert that was checked
-  personalCertificateId    String                         // personal cert that was checked
-  verifiedByUserId         String?                        // null = public/third-party
+  id                       String   @id @default(uuid())
+  institutionCertificateId String // institution cert that was checked
+  personalCertificateId    String // personal cert that was checked
+  verifiedByUserId         String? // null = public/third-party
   documentHash             String
-  institutionSigValid      Boolean                        // was the institution signature valid?
-  userSigValid             Boolean                        // was the user signature valid?
-  result                   Boolean                        // true only if BOTH are valid
+  institutionSigValid      Boolean // was the institution signature valid?
+  userSigValid             Boolean // was the user signature valid?
+  result                   Boolean // true only if BOTH are valid
   failReason               String?
   ipAddress                String?
-  createdAt                DateTime  @default(now())
+  createdAt                DateTime @default(now())
 
   @@index([institutionCertificateId])
   @@index([personalCertificateId])
@@ -605,11 +616,11 @@ model Admin {
   lastName     String
   email        String    @unique
   phoneNumber  String?
-  passwordHash String?   // null until invite is accepted and password is set
+  passwordHash String? // null until invite is accepted and password is set
   role         AdminRole @default(ADMIN)
   isVerified   Boolean   @default(false) // true after invite link is accepted
-  isActive     Boolean   @default(true)  // SUPER_ADMIN can deactivate an admin
-  createdById  String?   // which SUPER_ADMIN created this admin (null for seeded)
+  isActive     Boolean   @default(true) // SUPER_ADMIN can deactivate an admin
+  createdById  String? // which SUPER_ADMIN created this admin (null for seeded)
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
@@ -617,10 +628,10 @@ model Admin {
   createdBy     Admin?  @relation("AdminCreatedBy", fields: [createdById], references: [id])
   createdAdmins Admin[] @relation("AdminCreatedBy")
 
-  adminRefreshTokens AdminRefreshToken[]
-  adminInviteToken   AdminInviteToken?
-  auditLogs          AdminAuditLog[]
-  foreignIdentitiesRegistered ForeignIdentity[] @relation("ForeignIdentityRegistrations")
+  adminRefreshTokens          AdminRefreshToken[]
+  adminInviteToken            AdminInviteToken?
+  auditLogs                   AdminAuditLog[]
+  foreignIdentitiesRegistered ForeignIdentity[]   @relation("ForeignIdentityRegistrations")
 
   @@map("admins")
 }
@@ -675,8 +686,8 @@ model AdminAuditLog {
   id           String      @id @default(uuid())
   adminId      String
   action       AdminAction
-  targetUserId String?     // which user was affected (null for non-user actions)
-  metadata     Json?       // structured context for this specific action
+  targetUserId String? // which user was affected (null for non-user actions)
+  metadata     Json? // structured context for this specific action
   ipAddress    String?
   createdAt    DateTime    @default(now())
 
@@ -709,14 +720,14 @@ enum AdminAction {
   BOOTSTRAP_COMPLETED
 
   // NEW — foreign identity service actions
-  FOREIGN_IDENTITY_REGISTERED       // admin registered a new foreign user
-  FOREIGN_IDENTITY_UPDATED          // profile updated (increments issuanceVersion)
-  FOREIGN_IDENTITY_DEACTIVATED      // soft-deleted (SUPER_ADMIN only)
-  FOREIGN_IDENTITY_REACTIVATED      // reactivated (SUPER_ADMIN only)
-  FOREIGN_IDENTITY_VIEWED           // admin viewed a foreign identity profile
-  FOREIGN_IDENTITY_PASSPORT_DECRYPTED  // SUPER_ADMIN decrypted passport (heavily logged)
-  FOREIGN_IDENTITY_IMAGE_UPLOADED   // profile image added or replaced
-  FOREIGN_IDENTITY_IMAGE_REMOVED    // profile image removed
+  FOREIGN_IDENTITY_REGISTERED // admin registered a new foreign user
+  FOREIGN_IDENTITY_UPDATED // profile updated (increments issuanceVersion)
+  FOREIGN_IDENTITY_DEACTIVATED // soft-deleted (SUPER_ADMIN only)
+  FOREIGN_IDENTITY_REACTIVATED // reactivated (SUPER_ADMIN only)
+  FOREIGN_IDENTITY_VIEWED // admin viewed a foreign identity profile
+  FOREIGN_IDENTITY_PASSPORT_DECRYPTED // SUPER_ADMIN decrypted passport (heavily logged)
+  FOREIGN_IDENTITY_IMAGE_UPLOADED // profile image added or replaced
+  FOREIGN_IDENTITY_IMAGE_REMOVED // profile image removed
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -732,45 +743,45 @@ enum AdminAction {
 // The contentHash is computed at finalisation time and verified at signing time.
 // If content has changed between finalise and sign, the service rejects the sign.
 model Document {
-  id              String          @id @default(uuid())
-  ownerId         String                               // verified user who created this
-  title           String          @default("Untitled Document")
-  type            DocumentType                         // RICH_TEXT or SPREADSHEET
-  status          DocumentStatus  @default(DRAFT)
-  folderId        String?                              // optional folder organisation
-  tags            String[]        @default([])         // user-assigned tags
-  s3ContentKey    String?                              // S3 key for editor JSON state
-  s3PdfKey        String?                              // S3 key for rendered PDF (set after signing)
-  contentHash     String?                              // SHA-256 of content JSON at finalisation
-  wordCount       Int             @default(0)          // updated on each autosave
-  layout          Json?                                // persisted page layout settings (paper + margins)
-  signerDisplayName      String?                      // immutable signer name snapshot taken at lock time
-  signatureImageS3Key    String?                      // immutable signature image snapshot key taken at lock time
-  signatureImageMimeType String?                      // snapshot mime type for display fidelity
-  signatureImageSizeBytes Int?                        // snapshot file size for UI/debugging
-  signatureBlockAlignment String?                     // presentation alignment for the signed strip on the rendered paper
-  signatureBlockX         Float?                      // normalized x position of signature strip (0.0 = left edge, 1.0 = right edge)
-  signatureBlockY         Float?                      // normalized y position of signature strip (0.0 = top, 1.0 = bottom)
-  isDeleted       Boolean         @default(false)      // soft delete — never hard delete
-  deletedAt       DateTime?
+  id                       String         @id @default(uuid())
+  ownerId                  String // verified user who created this
+  title                    String         @default("Untitled Document")
+  type                     DocumentType // RICH_TEXT or SPREADSHEET
+  status                   DocumentStatus @default(DRAFT)
+  folderId                 String? // optional folder organisation
+  tags                     String[]       @default([]) // user-assigned tags
+  s3ContentKey             String? // S3 key for editor JSON state
+  s3PdfKey                 String? // S3 key for rendered PDF (set after signing)
+  contentHash              String? // SHA-256 of content JSON at finalisation
+  wordCount                Int            @default(0) // updated on each autosave
+  layout                   Json? // persisted page layout settings (paper + margins)
+  signerDisplayName        String? // immutable signer name snapshot taken at lock time
+  signatureImageS3Key      String? // immutable signature image snapshot key taken at lock time
+  signatureImageMimeType   String? // snapshot mime type for display fidelity
+  signatureImageSizeBytes  Int? // snapshot file size for UI/debugging
+  signatureBlockAlignment  String? // presentation alignment for the signed strip on the rendered paper
+  signatureBlockX          Float? // normalized x position of signature strip (0.0 = left edge, 1.0 = right edge)
+  signatureBlockY          Float? // normalized y position of signature strip (0.0 = top, 1.0 = bottom)
+  isDeleted                Boolean        @default(false) // soft delete — never hard delete
+  deletedAt                DateTime?
   // Signing references — set when document is signed
-  personalSignedDocumentId  String?   @unique          // FK to personal_signed_documents
-  institutionStampId        String?   @unique          // FK to institution_stamps (optional stamp)
+  personalSignedDocumentId String?        @unique // FK to personal_signed_documents
+  institutionStampId       String?        @unique // FK to institution_stamps (optional stamp)
   // Timestamps
-  finalisedAt     DateTime?                            // when DRAFT → FINALISED
-  signedAt        DateTime?                            // when FINALISED → SIGNED
-  lockedAt        DateTime?                            // when SIGNED → LOCKED
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
+  finalisedAt              DateTime? // when DRAFT → FINALISED
+  signedAt                 DateTime? // when FINALISED → SIGNED
+  lockedAt                 DateTime? // when SIGNED → LOCKED
+  createdAt                DateTime       @default(now())
+  updatedAt                DateTime       @updatedAt
 
-  owner         User                    @relation("DocumentOwner",       fields: [ownerId],   references: [id], onDelete: Cascade)
-  folder        DocumentFolder?         @relation(fields: [folderId],   references: [id],    onDelete: SetNull)
-  collaborators DocumentCollaborator[]
+  owner                          User                                    @relation("DocumentOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  folder                         DocumentFolder?                         @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  collaborators                  DocumentCollaborator[]
   invitationVerificationSessions DocumentInvitationVerificationSession[]
-  accessAuditLogs DocumentAccessAuditLog[]
-  versions      DocumentVersion[]
-  comments      DocumentComment[]
-  signatureRequests DocumentSignatureRequest[]
+  accessAuditLogs                DocumentAccessAuditLog[]
+  versions                       DocumentVersion[]
+  comments                       DocumentComment[]
+  signatureRequests              DocumentSignatureRequest[]
 
   @@index([ownerId])
   @@index([status])
@@ -785,10 +796,10 @@ enum DocumentType {
 }
 
 enum DocumentStatus {
-  DRAFT        // Being edited — content can change
-  FINALISED    // Content frozen — hash computed — awaiting signatures
-  SIGNED       // All required signatures collected
-  LOCKED       // Permanently immutable — PDF generated
+  DRAFT // Being edited — content can change
+  FINALISED // Content frozen — hash computed — awaiting signatures
+  SIGNED // All required signatures collected
+  LOCKED // Permanently immutable — PDF generated
 }
 
 // ─── Document Folders ────────────────────────────────────────────────────────
@@ -796,17 +807,17 @@ enum DocumentStatus {
 // Folders can be nested one level deep (a folder can have a parentFolderId).
 // Folders are never shared — they belong to one user only.
 model DocumentFolder {
-  id            String    @id @default(uuid())
-  ownerId       String
-  name          String    @db.VarChar(255)
-  parentFolderId String?                            // one level of nesting only
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id             String   @id @default(uuid())
+  ownerId        String
+  name           String   @db.VarChar(255)
+  parentFolderId String? // one level of nesting only
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  owner         User               @relation(fields: [ownerId],        references: [id], onDelete: Cascade)
-  parentFolder  DocumentFolder?    @relation("FolderNesting", fields: [parentFolderId], references: [id])
-  subFolders    DocumentFolder[]   @relation("FolderNesting")
-  documents     Document[]
+  owner        User             @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  parentFolder DocumentFolder?  @relation("FolderNesting", fields: [parentFolderId], references: [id])
+  subFolders   DocumentFolder[] @relation("FolderNesting")
+  documents    Document[]
 
   @@index([ownerId])
   @@map("document_folders")
@@ -820,27 +831,27 @@ model DocumentFolder {
 // A document owner is never in this table — they are always the owner.
 // Collaborators are always ID-verified users — unverified users cannot be added.
 model DocumentCollaborator {
-  id                  String                         @id @default(uuid())
-  documentId          String
-  userId              String
-  role                CollaboratorRole                                   // legacy compatibility field
-  permissions         CollaboratorPermission[]        @default([READ])   // additive access model going forward
-  invitedByUserId     String?
-  invitationStatus    CollaboratorInvitationStatus   @default(PENDING)
-  invitationTokenHash String?                        @unique             // hashed single-use invitation token
-  invitationExpiresAt DateTime?
+  id                    String                       @id @default(uuid())
+  documentId            String
+  userId                String
+  role                  CollaboratorRole // legacy compatibility field
+  permissions           CollaboratorPermission[]     @default([READ]) // additive access model going forward
+  invitedByUserId       String?
+  invitationStatus      CollaboratorInvitationStatus @default(PENDING)
+  invitationTokenHash   String?                      @unique // hashed single-use invitation token
+  invitationExpiresAt   DateTime?
   invitationEmailSentAt DateTime?
-  invitationOpenedAt  DateTime?
-  invitedAt           DateTime                       @default(now())
-  acceptedAt          DateTime?                                          // null = invitation not yet accepted
-  declinedAt          DateTime?
-  revokedAt           DateTime?
-  note                String?                        @db.Text            // optional sender note shown on invite
-  isActive            Boolean                        @default(false)     // flips true only after explicit acceptance
+  invitationOpenedAt    DateTime?
+  invitedAt             DateTime                     @default(now())
+  acceptedAt            DateTime? // null = invitation not yet accepted
+  declinedAt            DateTime?
+  revokedAt             DateTime?
+  note                  String?                      @db.Text // optional sender note shown on invite
+  isActive              Boolean                      @default(false) // flips true only after explicit acceptance
 
-  document            Document                       @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  user                User                           @relation("DocumentCollaboratorRecipient", fields: [userId], references: [id], onDelete: Cascade)
-  invitedBy           User?                          @relation("DocumentInviteSender", fields: [invitedByUserId], references: [id], onDelete: SetNull)
+  document            Document                               @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  user                User                                   @relation("DocumentCollaboratorRecipient", fields: [userId], references: [id], onDelete: Cascade)
+  invitedBy           User?                                  @relation("DocumentInviteSender", fields: [invitedByUserId], references: [id], onDelete: SetNull)
   verificationSession DocumentInvitationVerificationSession?
   accessAuditLogs     DocumentAccessAuditLog[]
 
@@ -854,29 +865,29 @@ model DocumentCollaborator {
 }
 
 model DocumentInvitationVerificationSession {
-  id                     String   @id @default(uuid())
-  collaboratorId         String   @unique
-  documentId             String
-  userId                 String
-  emailOtpCodeHash       String?
-  emailOtpSentAt         DateTime?
-  emailOtpExpiresAt      DateTime?
-  emailOtpVerifiedAt     DateTime?
-  emailOtpAttemptCount   Int      @default(0)
-  emailOtpRequestCount   Int      @default(0)
-  emailOtpWindowStartedAt DateTime?
-  identityChallengeStartedAt DateTime?
-  identityFailureAttemptId String?
+  id                            String    @id @default(uuid())
+  collaboratorId                String    @unique
+  documentId                    String
+  userId                        String
+  emailOtpCodeHash              String?
+  emailOtpSentAt                DateTime?
+  emailOtpExpiresAt             DateTime?
+  emailOtpVerifiedAt            DateTime?
+  emailOtpAttemptCount          Int       @default(0)
+  emailOtpRequestCount          Int       @default(0)
+  emailOtpWindowStartedAt       DateTime?
+  identityChallengeStartedAt    DateTime?
+  identityFailureAttemptId      String?
   identityVerificationAttemptId String?
-  identityVerifiedAt     DateTime?
-  completedAt            DateTime?
-  expiresAt              DateTime
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
+  identityVerifiedAt            DateTime?
+  completedAt                   DateTime?
+  expiresAt                     DateTime
+  createdAt                     DateTime  @default(now())
+  updatedAt                     DateTime  @updatedAt
 
-  collaborator           DocumentCollaborator @relation(fields: [collaboratorId], references: [id], onDelete: Cascade)
-  document               Document             @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  user                   User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  collaborator DocumentCollaborator @relation(fields: [collaboratorId], references: [id], onDelete: Cascade)
+  document     Document             @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  user         User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([documentId])
   @@index([userId, expiresAt])
@@ -887,7 +898,7 @@ model DocumentInvitationVerificationSession {
 enum CollaboratorRole {
   VIEWER
   EDITOR
-  SIGNER    // Must sign before document can be locked
+  SIGNER // Must sign before document can be locked
 }
 
 enum CollaboratorPermission {
@@ -911,24 +922,24 @@ enum CollaboratorInvitationStatus {
 // We keep both actorUserId and targetUserId because the actor and recipient are
 // often different people, and some events happen before access is granted.
 model DocumentAccessAuditLog {
-  id                String                         @id @default(uuid())
-  documentId        String
-  collaboratorId    String?
-  actorUserId       String?
-  targetUserId      String?
-  eventType         DocumentAccessAuditEvent
-  fromPermissions   CollaboratorPermission[]      @default([])
-  toPermissions     CollaboratorPermission[]      @default([])
-  invitationStatus  CollaboratorInvitationStatus?
-  metadata          Json?
-  ipAddress         String?
-  userAgent         String?
-  createdAt         DateTime                      @default(now())
+  id               String                        @id @default(uuid())
+  documentId       String
+  collaboratorId   String?
+  actorUserId      String?
+  targetUserId     String?
+  eventType        DocumentAccessAuditEvent
+  fromPermissions  CollaboratorPermission[]      @default([])
+  toPermissions    CollaboratorPermission[]      @default([])
+  invitationStatus CollaboratorInvitationStatus?
+  metadata         Json?
+  ipAddress        String?
+  userAgent        String?
+  createdAt        DateTime                      @default(now())
 
-  document          Document                      @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  collaborator      DocumentCollaborator?         @relation(fields: [collaboratorId], references: [id], onDelete: SetNull)
-  actorUser         User?                         @relation("DocumentAccessAuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
-  targetUser        User?                         @relation("DocumentAccessAuditTarget", fields: [targetUserId], references: [id], onDelete: SetNull)
+  document     Document              @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  collaborator DocumentCollaborator? @relation(fields: [collaboratorId], references: [id], onDelete: SetNull)
+  actorUser    User?                 @relation("DocumentAccessAuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  targetUser   User?                 @relation("DocumentAccessAuditTarget", fields: [targetUserId], references: [id], onDelete: SetNull)
 
   @@index([documentId, createdAt])
   @@index([collaboratorId, createdAt])
@@ -972,16 +983,16 @@ enum DocumentAccessAuditEvent {
 // Versions allow the user to roll back to any previous state while the document
 // is still in DRAFT status. Once FINALISED, new versions cannot be created.
 model DocumentVersion {
-  id            String    @id @default(uuid())
+  id            String   @id @default(uuid())
   documentId    String
-  versionNumber Int                                    // 1, 2, 3 … increments per document
-  s3Key         String                                 // S3 key for this version's content JSON
-  wordCount     Int       @default(0)
-  savedById     String                                 // which user triggered this save
-  createdAt     DateTime  @default(now())
+  versionNumber Int // 1, 2, 3 … increments per document
+  s3Key         String // S3 key for this version's content JSON
+  wordCount     Int      @default(0)
+  savedById     String // which user triggered this save
+  createdAt     DateTime @default(now())
 
-  document      Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  savedBy       User      @relation(fields: [savedById],  references: [id])
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  savedBy  User     @relation(fields: [savedById], references: [id])
 
   @@unique([documentId, versionNumber])
   @@index([documentId])
@@ -998,8 +1009,8 @@ model DocumentComment {
   id              String    @id @default(uuid())
   documentId      String
   authorId        String
-  parentCommentId String?                              // null = top-level, set = reply
-  anchorText      String?   @db.Text                  // text selection the comment is on
+  parentCommentId String? // null = top-level, set = reply
+  anchorText      String?   @db.Text // text selection the comment is on
   anchorFrom      Int?
   anchorTo        Int?
   content         String    @db.Text
@@ -1007,10 +1018,10 @@ model DocumentComment {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  document        Document          @relation(fields: [documentId],      references: [id], onDelete: Cascade)
-  author          User              @relation(fields: [authorId],        references: [id])
-  parentComment   DocumentComment?  @relation("CommentReplies", fields: [parentCommentId], references: [id])
-  replies         DocumentComment[] @relation("CommentReplies")
+  document      Document          @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  author        User              @relation(fields: [authorId], references: [id])
+  parentComment DocumentComment?  @relation("CommentReplies", fields: [parentCommentId], references: [id])
+  replies       DocumentComment[] @relation("CommentReplies")
 
   @@index([documentId])
   @@index([authorId])
@@ -1023,31 +1034,31 @@ model DocumentComment {
 // The document cannot be LOCKED until all pending requests are fulfilled.
 // status: PENDING → SIGNED or DECLINED.
 model DocumentSignatureRequest {
-  id              String                       @id @default(uuid())
-  documentId      String
-  requestedById   String                                              // the document owner
-  requestedUserId String                                              // the user asked to sign
-  status          SignatureRequestStatus        @default(PENDING)
-  message         String?                      @db.Text              // optional note from owner
-  declinedReason  String?
+  id                              String                 @id @default(uuid())
+  documentId                      String
+  requestedById                   String // the document owner
+  requestedUserId                 String // the user asked to sign
+  status                          SignatureRequestStatus @default(PENDING)
+  message                         String?                @db.Text // optional note from owner
+  declinedReason                  String?
   // Set when the user actually signs
-  personalSignedDocumentId String?             @unique
-  signerDisplayNameSnapshot      String?
-  signerEmailSnapshot            String?
-  signatureImageS3KeySnapshot    String?
-  signatureImageMimeTypeSnapshot String?
+  personalSignedDocumentId        String?                @unique
+  signerDisplayNameSnapshot       String?
+  signerEmailSnapshot             String?
+  signatureImageS3KeySnapshot     String?
+  signatureImageMimeTypeSnapshot  String?
   signatureImageSizeBytesSnapshot Int?
-  signedAt        DateTime?
-  createdAt       DateTime                     @default(now())
-  updatedAt       DateTime                     @updatedAt
+  signedAt                        DateTime?
+  createdAt                       DateTime               @default(now())
+  updatedAt                       DateTime               @updatedAt
 
-  document        Document  @relation(fields: [documentId],      references: [id], onDelete: Cascade)
-  requestedBy     User      @relation("SignatureRequestor", fields: [requestedById],   references: [id])
-  requestedUser   User      @relation("SignatureRespondent", fields: [requestedUserId], references: [id])
+  document      Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  requestedBy   User     @relation("SignatureRequestor", fields: [requestedById], references: [id])
+  requestedUser User     @relation("SignatureRespondent", fields: [requestedUserId], references: [id])
 
+  @@unique([documentId, requestedUserId])
   @@index([documentId])
   @@index([requestedUserId])
-  @@unique([documentId, requestedUserId])
   @@map("document_signature_requests")
 }
 
@@ -1067,17 +1078,17 @@ enum SignatureRequestStatus {
 //   {{DATE}} → current date
 //   {{INSTITUTION_NAME}} → institution name (for institutional templates)
 model DocumentTemplate {
-  id            String              @id @default(uuid())
-  name          String              @db.VarChar(255)
-  description   String              @db.Text
-  category      TemplateCategory
-  type          DocumentType                              // RICH_TEXT or SPREADSHEET
-  contentJson   Json                                     // Tiptap JSON with placeholders
-  isPublic      Boolean             @default(true)       // false = platform-admin only
-  usageCount    Int                 @default(0)          // incremented on each use
-  previewS3Key  String?                                  // S3 key for preview image
-  createdAt     DateTime            @default(now())
-  updatedAt     DateTime            @updatedAt
+  id           String           @id @default(uuid())
+  name         String           @db.VarChar(255)
+  description  String           @db.Text
+  category     TemplateCategory
+  type         DocumentType // RICH_TEXT or SPREADSHEET
+  contentJson  Json // Tiptap JSON with placeholders
+  isPublic     Boolean          @default(true) // false = platform-admin only
+  usageCount   Int              @default(0) // incremented on each use
+  previewS3Key String? // S3 key for preview image
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
 
   @@index([category])
   @@index([type])
@@ -1085,11 +1096,11 @@ model DocumentTemplate {
 }
 
 enum TemplateCategory {
-  CONTRACT         // Service agreements, employment contracts
-  LEGAL            // NDAs, affidavits, power of attorney
-  FINANCIAL        // Invoices, receipts, loan agreements
-  CORRESPONDENCE   // Letters, memos, official communications
-  RESOLUTION       // Board resolutions, meeting minutes
+  CONTRACT // Service agreements, employment contracts
+  LEGAL // NDAs, affidavits, power of attorney
+  FINANCIAL // Invoices, receipts, loan agreements
+  CORRESPONDENCE // Letters, memos, official communications
+  RESOLUTION // Board resolutions, meeting minutes
   OTHER
 }
 
@@ -1120,42 +1131,42 @@ enum TemplateCategory {
 //   Position 14    = issuance version (0 = first issuance, increments on updates)
 //   Positions 15–16 = ISO 7064 MOD 97-10 checksum
 model ForeignIdentity {
-  id                       String          @id @default(uuid())
-  fin                      String          @unique                      // 16-digit Foreign Identity Number
-  finHash                  String          @unique                      // SHA-256 of the FIN — fast lookup and duplicate detection
+  id      String @id @default(uuid())
+  fin     String @unique // 16-digit Foreign Identity Number
+  finHash String @unique // SHA-256 of the FIN — fast lookup and duplicate detection
 
-  firstName                String          @db.VarChar(100)             // plain text for display and X.509 cert subject
-  lastName                 String          @db.VarChar(100)
+  firstName String @db.VarChar(100) // plain text for display and X.509 cert subject
+  lastName  String @db.VarChar(100)
 
-  passportNumberEncrypted  String                                       // AES-256-CBC ciphertext (format: iv:ciphertext)
-  passportNumberHash       String          @unique                      // SHA-256 — duplicate detection without decryption
+  passportNumberEncrypted String // AES-256-CBC ciphertext (format: iv:ciphertext)
+  passportNumberHash      String @unique // SHA-256 — duplicate detection without decryption
 
-  gender                   ForeignGender                                // MALE → digit 8, FEMALE → digit 7
-  dateOfBirth              DateTime                                     // supplies positions 2–5 of the FIN
+  gender      ForeignGender // MALE → digit 8, FEMALE → digit 7
+  dateOfBirth DateTime // supplies positions 2–5 of the FIN
 
-  countryOfOrigin          String          @db.VarChar(2)               // ISO 3166-1 alpha-2 (e.g. "KE", "UG", "US")
-  nationality              String          @db.VarChar(100)             // human-readable (e.g. "Kenyan", "American")
-  maritalStatus            MaritalStatus
+  countryOfOrigin String        @db.VarChar(2) // ISO 3166-1 alpha-2 (e.g. "KE", "UG", "US")
+  nationality     String        @db.VarChar(100) // human-readable (e.g. "Kenyan", "American")
+  maritalStatus   MaritalStatus
 
   // Optional profile image — always optional, a valid foreign identity
   // exists even when no image is uploaded
-  imageUrl                 String?                                      // S3 presigned URL cached (regenerated on retrieval)
-  imageS3Key               String?                                      // S3 object key — stable reference
+  imageUrl   String? // S3 presigned URL cached (regenerated on retrieval)
+  imageS3Key String? // S3 object key — stable reference
 
   // Auditability — stored for traceability of the FIN generation
-  sequenceNumber           Int                                          // raw sequence used in positions 7–13
-  issuanceVersion          Int             @default(0)                  // increments on each profile update
+  sequenceNumber  Int // raw sequence used in positions 7–13
+  issuanceVersion Int @default(0) // increments on each profile update
 
   // Lifecycle
-  isActive                 Boolean         @default(true)               // soft delete — never hard delete
+  isActive Boolean @default(true) // soft delete — never hard delete
 
   // Who registered this person — always an ADMIN or SUPER_ADMIN
-  registeredByAdminId      String
+  registeredByAdminId String
 
-  createdAt                DateTime        @default(now())
-  updatedAt                DateTime        @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  registeredByAdmin        Admin           @relation("ForeignIdentityRegistrations", fields: [registeredByAdminId], references: [id])
+  registeredByAdmin Admin @relation("ForeignIdentityRegistrations", fields: [registeredByAdminId], references: [id])
 
   @@index([countryOfOrigin])
   @@index([dateOfBirth])
@@ -1178,21 +1189,21 @@ model ForeignIdentity {
 //   { birthYear: 1991, genderCode: 8, lastSequence: 1 }   // 1 male born 1991
 //   { birthYear: 1988, genderCode: 8, lastSequence: 1 }   // 1 male born 1988
 model FinSequence {
-  id            String    @id @default(uuid())
-  birthYear     Int                                                     // e.g. 1991
-  genderCode    Int                                                     // 7 = female, 8 = male (Rwanda convention)
-  lastSequence  Int       @default(0)                                   // highest sequence assigned so far
-  updatedAt     DateTime  @updatedAt
+  id           String   @id @default(uuid())
+  birthYear    Int // e.g. 1991
+  genderCode   Int // 7 = female, 8 = male (Rwanda convention)
+  lastSequence Int      @default(0) // highest sequence assigned so far
+  updatedAt    DateTime @updatedAt
 
-  @@unique([birthYear, genderCode])                                     // one counter per year+gender combination
+  @@unique([birthYear, genderCode]) // one counter per year+gender combination
   @@map("fin_sequences")
 }
 
 // ─── Enums ────────────────────────────────────────────────────────────────────
 
 enum ForeignGender {
-  MALE      // maps to gender digit 8 in FIN position 6
-  FEMALE    // maps to gender digit 7 in FIN position 6
+  MALE // maps to gender digit 8 in FIN position 6
+  FEMALE // maps to gender digit 7 in FIN position 6
 }
 
 enum MaritalStatus {
