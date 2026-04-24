@@ -4,17 +4,59 @@
 import { CorsOptions } from '@nestjs/common/interfaces/external/cors-options.interface';
 
 /**
- * Builds the CORS options based on the allowed frontend origin.
- * Only the frontend URL from .env is permitted — no wildcards.
- *
- * credentials: true is required because the frontend sends the
- * session cookie (SameSite=Strict) alongside Bearer tokens.
+ * Expands one or more environment strings into a strict frontend origin allowlist.
+ * Values may be a single origin or a comma-separated list, so the caller can
+ * pass `FRONTEND_URL` and `FRONTEND_URLS` together.
  */
-export function buildCorsConfig(frontendUrl: string): CorsOptions {
+function parseAllowedOrigins(...values: Array<string | undefined>): string[] {
+  return values
+    .flatMap((value) => (value ?? '').split(','))
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Builds the CORS options for the auth service.
+ *
+ * The auth API is reached from multiple frontend origins (the user app
+ * primarily, but the admin and documents apps also need session-recovery
+ * proxies), so we accept a comma-separated `FRONTEND_URLS` allowlist
+ * alongside the primary `FRONTEND_URL`. Wildcards are never permitted.
+ *
+ * `credentials: true` is required because the frontend sends the
+ * session cookie (SameSite=Strict) alongside Bearer tokens.
+ *
+ * @param frontendUrl - Primary frontend origin (the user app).
+ * @param frontendUrls - Optional comma-separated extra origins.
+ * @returns Nest-compatible CorsOptions backed by a strict origin function.
+ */
+export function buildCorsConfig(
+  frontendUrl: string,
+  frontendUrls?: string,
+): CorsOptions {
+  const allowedOrigins = parseAllowedOrigins(frontendUrl, frontendUrls);
+
   return {
-    // Only our own frontend can make credentialed requests.
-    // In production this is the deployed app URL from .env.
-    origin: frontendUrl,
+    // Strict origin function — explicit allowlist, no wildcards.
+    origin(origin, callback) {
+      // Same-origin or non-browser callers (no Origin header) are always allowed.
+      if (!origin) {
+        callback(null, true);
+        return;
+      }
+
+      if (allowedOrigins.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+
+      callback(
+        new Error(
+          `Origin ${origin} is not allowed by auth service CORS policy.`,
+        ),
+        false,
+      );
+    },
 
     // Allow only the HTTP methods this API actually uses.
     // OPTIONS is required for preflight requests.
