@@ -3,6 +3,7 @@ import {
   IsEnum,
   IsInt,
   IsNotEmpty,
+  IsOptional,
   IsString,
   Length,
   Min,
@@ -112,6 +113,12 @@ class EnvironmentVariables {
     message: 'FRONTEND_URL is required (used in verification email links)',
   })
   FRONTEND_URL!: string;
+
+  // Optional extra allowed origins for CORS, comma-separated.
+  // The auth API is also reached by admin/documents apps for session recovery.
+  @IsOptional()
+  @IsString()
+  FRONTEND_URLS?: string;
 
   // ─── AWS ───────────────────────────────────────────────────────────────────
   @IsString()
