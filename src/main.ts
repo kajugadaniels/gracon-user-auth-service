@@ -48,9 +48,13 @@ async function bootstrap() {
   app.use(json({ limit: '10kb' }));
 
   // ── CORS ────────────────────────────────────────────────────────
-  // Only our frontend origin is allowed.
-  // Credentials (session cookie) are permitted.
-  app.enableCors(buildCorsConfig(frontendUrl));
+  // Strict allowlist composed from FRONTEND_URL plus any comma-separated
+  // entries in FRONTEND_URLS so the admin and documents apps can call this
+  // service for session recovery / proxy routes. Credentials (session
+  // cookie) are permitted.
+  app.enableCors(
+    buildCorsConfig(frontendUrl, config.get<string>('FRONTEND_URLS')),
+  );
 
   // ── Global prefix ───────────────────────────────────────────────
   app.setGlobalPrefix('api/v1');
