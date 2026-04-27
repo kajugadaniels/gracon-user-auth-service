@@ -24,6 +24,7 @@ This service owns user registration, login, email verification, password reset, 
 - Foreign identity lookup integration for FIN-backed registration
 - ID + selfie verification workflow via the internal engine
 - Security-event capture and token cleanup background work
+- Shared persistence for personal certificate requests that must be approved before `api/signature` issues a real certificate
 
 ## Core Skills Needed
 
