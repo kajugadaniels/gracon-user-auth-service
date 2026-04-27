@@ -762,6 +762,13 @@ enum AdminAction {
   FOREIGN_IDENTITY_PASSPORT_DECRYPTED // SUPER_ADMIN decrypted passport (heavily logged)
   FOREIGN_IDENTITY_IMAGE_UPLOADED // profile image added or replaced
   FOREIGN_IDENTITY_IMAGE_REMOVED // profile image removed
+
+  // Personal signature / certificate lifecycle (admin-side actions)
+  SIGNATURE_REVOKED
+  CERTIFICATE_REVOKED
+  CERTIFICATE_REISSUE_REQUESTED
+  CERTIFICATE_REQUEST_APPROVED
+  CERTIFICATE_REQUEST_REJECTED
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
