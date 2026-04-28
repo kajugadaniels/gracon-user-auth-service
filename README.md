@@ -26,6 +26,7 @@ This service owns user registration, login, email verification, password reset, 
 - Security-event capture and token cleanup background work
 - Shared persistence for personal certificate requests that must be approved before `api/signature` issues a real certificate
 - Shared admin-audit enum values for certificate-request approval and rejection actions emitted by `api/admin`
+- Shared persistence for per-user certificate access policy, so revocation history and hard certificate bans stay separate
 
 ## Core Skills Needed
 
