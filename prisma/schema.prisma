@@ -985,6 +985,11 @@ enum CollaboratorInvitationStatus {
   EXPIRED
 }
 
+enum DocumentInvitationVerificationRequirement {
+  EMAIL_OTP
+  IDENTITY_VERIFICATION
+}
+
 // ─── Document Access Audit Logs ───────────────────────────────────────────────
 // Immutable audit trail of every invitation and permission event.
 // We keep both actorUserId and targetUserId because the actor and recipient are
