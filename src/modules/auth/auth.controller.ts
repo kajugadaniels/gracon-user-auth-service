@@ -184,6 +184,34 @@ export class AuthController {
   }
 
   /**
+   * POST /api/v1/auth/session/upgrade
+   * Exchanges a valid refresh token for a full session after ID verification.
+   */
+  @Post('session/upgrade')
+  @ThrottleAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Upgrade a verified limited session to full access',
+    description:
+      'Rotates the supplied refresh token and returns full tokens only when the user account is now identity verified. ' +
+      'This avoids asking a user to logout after completing identity verification in another app.',
+  })
+  @ApiBody({ type: RefreshTokenDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Session upgraded to full access.',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Identity verification has not completed yet.',
+  })
+  async upgradeSession(@Body() dto: RefreshTokenDto, @Req() req: Request) {
+    const ipAddress = this.extractIp(req);
+    const userAgent = req.headers['user-agent'] ?? 'unknown';
+    return this.authService.upgradeSession(dto, ipAddress, userAgent);
+  }
+
+  /**
    * POST /api/v1/auth/logout
    * General limit — not a sensitive write, but still protected globally.
    * Explicitly scoped to prevent strict/auth throttlers from applying.
