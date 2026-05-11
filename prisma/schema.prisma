@@ -899,27 +899,28 @@ model DocumentFolder {
 // A document owner is never in this table — they are always the owner.
 // Collaborators are always ID-verified users — unverified users cannot be added.
 model DocumentCollaborator {
-  id                    String                       @id @default(uuid())
-  documentId            String
-  userId                String
-  role                  CollaboratorRole // legacy compatibility field
-  permissions           CollaboratorPermission[]     @default([READ]) // additive access model going forward
-  invitedByUserId       String?
-  invitationStatus      CollaboratorInvitationStatus @default(PENDING)
-  invitationTokenHash   String?                      @unique // hashed single-use invitation token
-  invitationExpiresAt   DateTime?
+  id                  String                         @id @default(uuid())
+  documentId          String
+  userId              String
+  role                CollaboratorRole                                   // legacy compatibility field
+  permissions         CollaboratorPermission[]        @default([READ])   // additive access model going forward
+  invitedByUserId     String?
+  invitationStatus    CollaboratorInvitationStatus   @default(PENDING)
+  invitationTokenHash String?                        @unique             // hashed single-use invitation token
+  requiredVerifications DocumentInvitationVerificationRequirement[] @default([EMAIL_OTP, IDENTITY_VERIFICATION])
+  invitationExpiresAt DateTime?
   invitationEmailSentAt DateTime?
-  invitationOpenedAt    DateTime?
-  invitedAt             DateTime                     @default(now())
-  acceptedAt            DateTime? // null = invitation not yet accepted
-  declinedAt            DateTime?
-  revokedAt             DateTime?
-  note                  String?                      @db.Text // optional sender note shown on invite
-  isActive              Boolean                      @default(false) // flips true only after explicit acceptance
+  invitationOpenedAt  DateTime?
+  invitedAt           DateTime                       @default(now())
+  acceptedAt          DateTime?                                          // null = invitation not yet accepted
+  declinedAt          DateTime?
+  revokedAt           DateTime?
+  note                String?                        @db.Text            // optional sender note shown on invite
+  isActive            Boolean                        @default(false)     // flips true only after explicit acceptance
 
-  document            Document                               @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  user                User                                   @relation("DocumentCollaboratorRecipient", fields: [userId], references: [id], onDelete: Cascade)
-  invitedBy           User?                                  @relation("DocumentInviteSender", fields: [invitedByUserId], references: [id], onDelete: SetNull)
+  document            Document                       @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  user                User                           @relation("DocumentCollaboratorRecipient", fields: [userId], references: [id], onDelete: Cascade)
+  invitedBy           User?                          @relation("DocumentInviteSender", fields: [invitedByUserId], references: [id], onDelete: SetNull)
   verificationSession DocumentInvitationVerificationSession?
   accessAuditLogs     DocumentAccessAuditLog[]
 
