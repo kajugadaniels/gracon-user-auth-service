@@ -4,6 +4,7 @@ import {
   Get,
   Patch,
   Body,
+  Query,
   UseInterceptors,
   UploadedFile,
   HttpCode,
@@ -17,6 +18,7 @@ import {
   ApiOperation,
   ApiBody,
   ApiConsumes,
+  ApiQuery,
   ApiResponse,
 } from '@nestjs/swagger';
 import { UsersService } from './users.service';
@@ -165,7 +167,8 @@ export class UsersController {
       'After verification, proceed to `POST /api/v1/auth/login` to obtain tokens.\n\n' +
       '**Rate limit:** 5 requests per minute per IP address.',
   })
-  @ApiBody({ type: VerifyEmailDto })
+  @ApiQuery({ name: 'userId', type: String })
+  @ApiQuery({ name: 'token', type: String })
   @ApiResponse({
     status: 200,
     description:
@@ -190,7 +193,7 @@ export class UsersController {
       },
     },
   })
-  async verifyEmail(@Body() dto: VerifyEmailDto) {
+  async verifyEmail(@Query() dto: VerifyEmailDto) {
     return this.usersService.verifyEmail(dto);
   }
 
