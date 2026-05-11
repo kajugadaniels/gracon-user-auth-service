@@ -7,6 +7,8 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { IdentityType } from '@prisma/client';
@@ -24,6 +26,11 @@ import { UpdateProfileDto } from './dto/update-profile.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { RegistrationResult } from './interfaces/registration-result.interface';
 import { SecurityEventService } from '../../common/security/security-event.service';
+import type {
+  AuthTokens,
+  JwtPayload,
+  SafeUserProfile,
+} from '../auth/interfaces/auth.interface';
 
 interface RegistrationIdentityRecord {
   identityType: IdentityType;
@@ -45,6 +52,8 @@ export class UsersService {
 
   // Verification token expiry — 24 hours in milliseconds
   private readonly TOKEN_EXPIRY_MS = 24 * 60 * 60 * 1000;
+  private readonly LIMITED_ACCESS_TOKEN_EXPIRY = '2h';
+  private readonly REFRESH_TOKEN_EXPIRY_MS = 30 * 24 * 60 * 60 * 1000;
 
   // Max resend attempts per hour to prevent email spam abuse
   private readonly MAX_RESEND_PER_HOUR = 3;
@@ -58,6 +67,8 @@ export class UsersService {
     private readonly foreignIdentityClient: ForeignIdentityClient,
     private readonly mailer: AppMailerService,
     private readonly secEvent: SecurityEventService,
+    private readonly jwtService: JwtService,
+    private readonly config: ConfigService,
   ) {}
 
   // ─── Registration ─────────────────────────────────────────────────────────
@@ -226,7 +237,16 @@ export class UsersService {
 
   async verifyEmail(
     dto: VerifyEmailDto,
-  ): Promise<{ success: boolean; message: string }> {
+  ): Promise<{
+    success: boolean;
+    message: string;
+    tokenType?: 'limited';
+    data?: {
+      accessToken: string;
+      refreshToken: string;
+      user: SafeUserProfile;
+    };
+  }> {
     // Find the token record for this user
     const tokenRecord = await this.prisma.emailVerificationToken.findUnique({
       where: { userId: dto.userId },
@@ -235,9 +255,20 @@ export class UsersService {
           select: {
             id: true,
             email: true,
+            phoneNumber: true,
+            imageUrl: true,
             isVerified: true,
+            isIdVerified: true,
+            idVerifiedAt: true,
+            createdAt: true,
             citizenIdentity: {
-              select: { surName: true, postNames: true },
+              select: {
+                identityType: true,
+                finEncrypted: true,
+                surName: true,
+                postNames: true,
+                sex: true,
+              },
             },
             platformId: {
               select: { pidEncrypted: true },
@@ -317,9 +348,29 @@ export class UsersService {
 
     this.logger.log(`Email verified and account activated: ${dto.userId}`);
 
+    if (tokenRecord.user.isIdVerified) {
+      return {
+        success: true,
+        message:
+          'Email verified successfully. Your account is ready. Please log in.',
+      };
+    }
+
+    const tokens = await this.generatePostEmailVerificationTokens(
+      tokenRecord.user.id,
+      tokenRecord.user.email,
+    );
+
     return {
       success: true,
-      message: 'Email verified successfully. Your account is now active.',
+      message:
+        'Email verified successfully. Continue with identity verification.',
+      tokenType: 'limited',
+      data: {
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        user: this.buildVerificationSessionProfile(tokenRecord.user),
+      },
     };
   }
 
@@ -771,6 +822,73 @@ export class UsersService {
 
     const presigned = await this.s3.getPresignedUrl(imageUrl);
     return { url: presigned.url, expiresAt: presigned.expiresAt };
+  }
+
+  private async generatePostEmailVerificationTokens(
+    userId: string,
+    email: string,
+  ): Promise<AuthTokens> {
+    const payload: JwtPayload = { sub: userId, email, tokenType: 'limited' };
+    const accessToken = this.jwtService.sign(payload, {
+      expiresIn: this.LIMITED_ACCESS_TOKEN_EXPIRY,
+      secret: this.config.get<string>('JWT_SECRET'),
+    });
+    const rawRefreshToken = crypto.randomBytes(40).toString('hex');
+    const refreshTokenHash = this.encryption.hash(rawRefreshToken);
+    const expiresAt = new Date(Date.now() + this.REFRESH_TOKEN_EXPIRY_MS);
+
+    await this.prisma.refreshToken.create({
+      data: {
+        userId,
+        tokenHash: refreshTokenHash,
+        tokenType: 'limited',
+        expiresAt,
+      },
+    });
+
+    return {
+      accessToken,
+      refreshToken: rawRefreshToken,
+      tokenType: 'limited',
+    };
+  }
+
+  private buildVerificationSessionProfile(user: {
+    id: string;
+    email: string;
+    phoneNumber: string | null;
+    imageUrl: string | null;
+    isIdVerified: boolean;
+    idVerifiedAt: Date | null;
+    createdAt: Date;
+    citizenIdentity: {
+      identityType: IdentityType;
+      finEncrypted: string | null;
+      surName: string;
+      postNames: string;
+      sex: string;
+    } | null;
+  }): SafeUserProfile {
+    const fin =
+      user.citizenIdentity?.identityType === IdentityType.FIN &&
+      user.citizenIdentity.finEncrypted
+        ? this.encryption.decrypt(user.citizenIdentity.finEncrypted)
+        : null;
+
+    return {
+      userId: user.id,
+      email: user.email,
+      phoneNumber: user.phoneNumber,
+      imageUrl: user.imageUrl,
+      surName: user.citizenIdentity?.surName ?? '',
+      postNames: user.citizenIdentity?.postNames ?? '',
+      sex: user.citizenIdentity?.sex ?? '',
+      identityType: user.citizenIdentity?.identityType ?? IdentityType.NID,
+      fin,
+      isIdVerified: user.isIdVerified,
+      idVerifiedAt: user.idVerifiedAt,
+      createdAt: user.createdAt,
+    };
   }
 
   /**
