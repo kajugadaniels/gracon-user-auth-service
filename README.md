@@ -41,6 +41,7 @@ This service owns user registration, login, email verification, password reset, 
 
 - Access/refresh JWT split with hashed refresh-token persistence
 - Full-token vs limited-token access model
+- Email verification can issue a temporary limited session for personal-account identity verification; full login still requires both email and identity verification to be complete
 - Single-flight refresh rotation plus verified limited-session upgrade to prevent parallel app calls from forcing re-login
 - AES encryption for national/citizen identifiers
 - Strict throttling on brute-force and recovery endpoints
