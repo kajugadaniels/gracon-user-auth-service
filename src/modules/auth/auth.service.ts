@@ -30,6 +30,7 @@ export class AuthService {
   private readonly LIMITED_ACCESS_TOKEN_EXPIRY = '2h'; // enough to complete ID verify
   private readonly REFRESH_TOKEN_EXPIRY = '30d';
   private readonly REFRESH_TOKEN_EXPIRY_MS = 30 * 24 * 60 * 60 * 1000;
+  private readonly pendingRefreshes = new Map<string, Promise<AuthTokens>>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -148,6 +149,62 @@ export class AuthService {
   ): Promise<AuthTokens> {
     const tokenHash = this.encryption.hash(dto.refreshToken);
 
+    return this.runSingleFlightRefresh(tokenHash, () =>
+      this.rotateRefreshToken(tokenHash, ipAddress, userAgent, false),
+    );
+  }
+
+  /**
+   * Rotates a refresh token into a full session once identity verification has
+   * completed. This lets frontends recover from a stale limited session without
+   * forcing a logout/login cycle.
+   */
+  async upgradeSession(
+    dto: RefreshTokenDto,
+    ipAddress: string,
+    userAgent: string,
+  ): Promise<AuthTokens> {
+    const tokenHash = this.encryption.hash(dto.refreshToken);
+
+    const tokens = await this.runSingleFlightRefresh(tokenHash, () =>
+      this.rotateRefreshToken(tokenHash, ipAddress, userAgent, true),
+    );
+
+    if (tokens.tokenType !== 'full') {
+      throw new ForbiddenException(
+        'Identity verification is required before this session can be upgraded.',
+      );
+    }
+
+    return tokens;
+  }
+
+  /**
+   * Ensures concurrent refresh attempts for the same token share one rotation.
+   * This keeps legitimate parallel browser/proxy requests from being mistaken
+   * for refresh-token replay.
+   */
+  private runSingleFlightRefresh(
+    tokenHash: string,
+    task: () => Promise<AuthTokens>,
+  ): Promise<AuthTokens> {
+    const pending = this.pendingRefreshes.get(tokenHash);
+    if (pending) return pending;
+
+    const refresh = task().finally(() => {
+      this.pendingRefreshes.delete(tokenHash);
+    });
+
+    this.pendingRefreshes.set(tokenHash, refresh);
+    return refresh;
+  }
+
+  private async rotateRefreshToken(
+    tokenHash: string,
+    ipAddress: string,
+    userAgent: string,
+    requireFullToken: boolean,
+  ): Promise<AuthTokens> {
     const storedToken = await this.prisma.refreshToken.findUnique({
       where: { tokenHash },
       include: {
@@ -188,13 +245,25 @@ export class AuthService {
       );
     }
 
-    // Revoke old, issue new — preserve token type
+    if (requireFullToken && !storedToken.user.isIdVerified) {
+      throw new ForbiddenException(
+        'Identity verification is required before this session can be upgraded.',
+      );
+    }
+
+    // Revoke old, issue new. Limited sessions are upgraded automatically once
+    // the source-of-truth user record says identity verification has passed.
     await this.prisma.refreshToken.update({
       where: { id: storedToken.id },
       data: { revoked: true },
     });
 
-    const tokenType = (storedToken.tokenType as 'full' | 'limited') ?? 'full';
+    const currentTokenType =
+      (storedToken.tokenType as 'full' | 'limited') ?? 'full';
+    const tokenType =
+      storedToken.user.isIdVerified && currentTokenType === 'limited'
+        ? 'full'
+        : currentTokenType;
 
     const newTokens = await this.generateTokens(
       storedToken.user.id,
