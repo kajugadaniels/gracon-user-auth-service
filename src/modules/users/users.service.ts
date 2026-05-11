@@ -328,21 +328,31 @@ export class UsersService {
   async resendVerificationEmail(
     dto: ResendVerificationDto,
   ): Promise<{ success: boolean; message: string }> {
-    // Find user — use vague message to prevent user enumeration attacks
-    const user = await this.prisma.user.findUnique({
-      where: { email: dto.email },
-      include: {
-        citizenIdentity: { select: { surName: true, postNames: true } },
-        emailVerificationToken: true,
-      },
-    });
-
     // Vague response — attacker can't determine if email is registered
     const safeResponse = {
       success: true,
       message:
         'If this email is registered and unverified, a new verification email has been sent.',
     };
+
+    const userLookup = dto.userId
+      ? { id: dto.userId }
+      : dto.email
+        ? { email: dto.email }
+        : null;
+
+    if (!userLookup) {
+      return safeResponse;
+    }
+
+    // Find user — use vague response to prevent user enumeration attacks.
+    const user = await this.prisma.user.findUnique({
+      where: userLookup,
+      include: {
+        citizenIdentity: { select: { surName: true, postNames: true } },
+        emailVerificationToken: true,
+      },
+    });
 
     if (!user || user.isVerified) {
       return safeResponse;
