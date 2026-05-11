@@ -41,6 +41,7 @@ This service owns user registration, login, email verification, password reset, 
 
 - Access/refresh JWT split with hashed refresh-token persistence
 - Full-token vs limited-token access model
+- Single-flight refresh rotation plus verified limited-session upgrade to prevent parallel app calls from forcing re-login
 - AES encryption for national/citizen identifiers
 - Strict throttling on brute-force and recovery endpoints
 - Private S3 upload pipeline with immediate post-processing deletion
@@ -135,6 +136,7 @@ MAIL_FROM=
 - This service owns shared schema migrations
 - Never store NID/PID or refresh tokens in plain text
 - Limited-token routes must be explicit
+- A verified user with a stale limited session should be upgraded through `POST /auth/session/upgrade`, not forced to logout
 - Verification images must be private, temporary, and deleted after engine processing
 - Sensitive endpoints require throttling
 - Prisma queries used in responses must select only safe fields
