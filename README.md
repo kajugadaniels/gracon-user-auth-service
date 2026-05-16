@@ -94,6 +94,7 @@ npm run start:dev
 npm run build
 npm run test
 npm run lint
+npm run seed:verified-users
 npx prisma generate
 ```
 
@@ -124,6 +125,35 @@ MAIL_FROM=
 
 - `FOREIGN_IDENTITY_SERVICE_URL` points at `api/foreign-identity` and is used only when a registration request supplies `fin` instead of `documentNumber`.
 - `FOREIGN_IDENTITY_SERVICE_USERNAME` and `FOREIGN_IDENTITY_SERVICE_PASSWORD` are the NIDA-style Basic Auth credentials used for internal FIN lookups. Use a dedicated service admin email as the username so `api/foreign-identity` can still resolve a real admin for audit logs.
+
+## Development Fake Verified Users
+
+`api/auth` owns the fake verified user seed because this service owns user registration, login, password hashing, encrypted NID/PID storage, and shared auth schema migrations. Do not seed login-ready users from `api/institution` or another consumer service.
+
+The fake verified user seed creates 100 Rwandan, login-ready users for local development or controlled test databases:
+
+- shared password: `Password!7`
+- `isVerified=true`
+- `isActive=true`
+- `isIdVerified=true`
+- encrypted NID and PID values
+- hashed NID and PID lookup values
+- Gmail-style addresses based on generated names
+- Rwandan phone numbers using `+25078`, `+25072`, or `+25073`
+
+The seed is intentionally separate from `npx prisma db seed`; the existing Prisma seed remains for the first `SUPER_ADMIN` only. Run fake users explicitly:
+
+```bash
+ALLOW_FAKE_VERIFIED_USERS_SEED=true npm run seed:verified-users
+```
+
+Safety rules:
+
+- `ALLOW_FAKE_VERIFIED_USERS_SEED=true` is required or the script exits before connecting to the database.
+- `APP_ENV=production` also requires `ALLOW_PRODUCTION_FAKE_VERIFIED_USERS_SEED=true`.
+- Production use should only happen in an approved disposable production-like test environment, never against the real production user database.
+- The script is idempotent by generated NID hash; rerunning it skips users already created by the same seed identity set.
+- Existing emails and phone numbers are loaded first so generated contact details do not collide with current development data.
 
 ## Integration Boundaries
 
