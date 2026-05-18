@@ -27,6 +27,7 @@ This service owns user registration, login, email verification, password reset, 
 - Shared persistence for personal certificate requests that must be approved before `api/signature` issues a real certificate
 - Shared admin-audit enum values for certificate-request approval and rejection actions emitted by `api/admin`
 - Shared persistence for per-user certificate access policy, so revocation history and hard certificate bans stay separate
+- Shared persistence for Gracon meetings tables used by `api/meetings`; migrations stay here while `api/meetings` mirrors the schema and runs Prisma generate only
 
 ## Core Skills Needed
 
@@ -165,6 +166,7 @@ Safety rules:
 ## Important Rules
 
 - This service owns shared schema migrations
+- Meeting table changes must be made here first, then copied to `api/meetings/prisma/schema.prisma`
 - Never store NID/PID or refresh tokens in plain text
 - Limited-token routes must be explicit
 - A verified user with a stale limited session should be upgraded through `POST /auth/session/upgrade`, not forced to logout
