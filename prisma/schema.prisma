@@ -1366,16 +1366,27 @@ model MeetingParticipant {
 // Invite tokens are stored hashed only. Raw invite tokens are sent once by email
 // or copied link and can be revoked without deleting meeting audit history.
 model MeetingInvite {
-  id            String    @id @default(uuid())
-  meetingId     String
-  inviterId     String
-  invitedUserId String?
-  email         String    @db.VarChar(255)
-  tokenHash     String    @unique
-  expiresAt     DateTime
-  acceptedAt    DateTime?
-  revokedAt     DateTime?
-  createdAt     DateTime  @default(now())
+  id                            String                                  @id @default(uuid())
+  meetingId                     String
+  inviterId                     String
+  invitedUserId                 String?
+  email                         String                                  @db.VarChar(255)
+  tokenHash                     String                                  @unique
+  requiredVerifications         MeetingInviteVerificationRequirement[] @default([EMAIL_OTP])
+  expiresAt                     DateTime
+  openedAt                      DateTime?
+  emailOtpCodeHash              String?
+  emailOtpSentAt                DateTime?
+  emailOtpExpiresAt             DateTime?
+  emailOtpVerifiedAt            DateTime?
+  emailOtpAttemptCount          Int                                     @default(0)
+  identityChallengeStartedAt    DateTime?
+  identityVerificationAttemptId String?
+  identityVerifiedAt            DateTime?
+  completedAt                   DateTime?
+  acceptedAt                    DateTime?
+  revokedAt                     DateTime?
+  createdAt                     DateTime                                @default(now())
 
   meeting     Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
   inviter     User    @relation("MeetingInviteSender", fields: [inviterId], references: [id])
@@ -1471,6 +1482,11 @@ enum MeetingParticipantStatus {
   REMOVED
 }
 
+enum MeetingInviteVerificationRequirement {
+  EMAIL_OTP
+  IDENTITY_VERIFICATION
+}
+
 enum MeetingRecordingStatus {
   STARTING
   RECORDING
@@ -1495,8 +1511,21 @@ enum MeetingAuditEvent {
   PARTICIPANT_JOINED
   PARTICIPANT_LEFT
   PARTICIPANT_REMOVED
+  INVITE_CREATED
+  INVITE_EMAIL_QUEUED
+  INVITE_EMAIL_SENT
+  INVITE_EMAIL_FAILED
+  INVITE_OPENED
+  INVITE_AUTH_REQUIRED
+  INVITE_LOGIN_COMPLETED
+  INVITE_EMAIL_OTP_REQUIRED
+  INVITE_EMAIL_OTP_SENT
+  INVITE_EMAIL_OTP_PASSED
+  INVITE_IDENTITY_REQUIRED
+  INVITE_IDENTITY_PASSED
   INVITE_ACCEPTED
   INVITE_REVOKED
+  RECORDING_REQUESTED
   RECORDING_STARTED
   RECORDING_STOPPED
   RECORDING_READY
