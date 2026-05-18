@@ -53,6 +53,13 @@ model User {
   signatureRequestsReceived              DocumentSignatureRequest[]              @relation("SignatureRespondent")
   documentAccessAuditEventsActed         DocumentAccessAuditLog[]                @relation("DocumentAccessAuditActor")
   documentAccessAuditEventsTargeted      DocumentAccessAuditLog[]                @relation("DocumentAccessAuditTarget")
+  meetingsOwned                          Meeting[]                               @relation("MeetingOwner")
+  meetingParticipants                    MeetingParticipant[]
+  meetingInvitesSent                     MeetingInvite[]                         @relation("MeetingInviteSender")
+  meetingInvitesReceived                 MeetingInvite[]                         @relation("MeetingInviteRecipient")
+  meetingRecordingsStarted               MeetingRecording[]                      @relation("MeetingRecordingStarter")
+  meetingAuditEventsActed                MeetingAuditLog[]                       @relation("MeetingAuditActor")
+  meetingAuditEventsTargeted             MeetingAuditLog[]                       @relation("MeetingAuditTarget")
 
   // ── Query pattern indexes ──────────────────────────────────────────────────
   // isActive and isIdVerified are boolean but queried with equality predicates
@@ -266,7 +273,7 @@ model PersonalKeyPair {
   isActive            Boolean              @default(true) // false when rotated
   createdAt           DateTime             @default(now())
 
-  user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user                User                         @relation(fields: [userId], references: [id], onDelete: Cascade)
   personalCertificate PersonalCertificate?
   certificateRequests PersonalCertificateRequest[]
 
@@ -353,17 +360,17 @@ model PersonalCertificateRequest {
 }
 
 model PersonalCertificateAccessPolicy {
-  id               String                        @id @default(uuid())
-  userId           String                        @unique
-  status           CertificateAccessPolicyStatus @default(ALLOWED)
-  banReason        String?
-  bannedByAdminId  String?
-  bannedAt         DateTime?
-  unbanReason      String?
+  id                String                        @id @default(uuid())
+  userId            String                        @unique
+  status            CertificateAccessPolicyStatus @default(ALLOWED)
+  banReason         String?
+  bannedByAdminId   String?
+  bannedAt          DateTime?
+  unbanReason       String?
   unbannedByAdminId String?
-  unbannedAt       DateTime?
-  createdAt        DateTime                      @default(now())
-  updatedAt        DateTime                      @updatedAt
+  unbannedAt        DateTime?
+  createdAt         DateTime                      @default(now())
+  updatedAt         DateTime                      @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -899,28 +906,28 @@ model DocumentFolder {
 // A document owner is never in this table — they are always the owner.
 // Collaborators are always ID-verified users — unverified users cannot be added.
 model DocumentCollaborator {
-  id                  String                         @id @default(uuid())
-  documentId          String
-  userId              String
-  role                CollaboratorRole                                   // legacy compatibility field
-  permissions         CollaboratorPermission[]        @default([READ])   // additive access model going forward
-  invitedByUserId     String?
-  invitationStatus    CollaboratorInvitationStatus   @default(PENDING)
-  invitationTokenHash String?                        @unique             // hashed single-use invitation token
+  id                    String                                      @id @default(uuid())
+  documentId            String
+  userId                String
+  role                  CollaboratorRole // legacy compatibility field
+  permissions           CollaboratorPermission[]                    @default([READ]) // additive access model going forward
+  invitedByUserId       String?
+  invitationStatus      CollaboratorInvitationStatus                @default(PENDING)
+  invitationTokenHash   String?                                     @unique // hashed single-use invitation token
   requiredVerifications DocumentInvitationVerificationRequirement[] @default([EMAIL_OTP, IDENTITY_VERIFICATION])
-  invitationExpiresAt DateTime?
+  invitationExpiresAt   DateTime?
   invitationEmailSentAt DateTime?
-  invitationOpenedAt  DateTime?
-  invitedAt           DateTime                       @default(now())
-  acceptedAt          DateTime?                                          // null = invitation not yet accepted
-  declinedAt          DateTime?
-  revokedAt           DateTime?
-  note                String?                        @db.Text            // optional sender note shown on invite
-  isActive            Boolean                        @default(false)     // flips true only after explicit acceptance
+  invitationOpenedAt    DateTime?
+  invitedAt             DateTime                                    @default(now())
+  acceptedAt            DateTime? // null = invitation not yet accepted
+  declinedAt            DateTime?
+  revokedAt             DateTime?
+  note                  String?                                     @db.Text // optional sender note shown on invite
+  isActive              Boolean                                     @default(false) // flips true only after explicit acceptance
 
-  document            Document                       @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  user                User                           @relation("DocumentCollaboratorRecipient", fields: [userId], references: [id], onDelete: Cascade)
-  invitedBy           User?                          @relation("DocumentInviteSender", fields: [invitedByUserId], references: [id], onDelete: SetNull)
+  document            Document                               @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  user                User                                   @relation("DocumentCollaboratorRecipient", fields: [userId], references: [id], onDelete: Cascade)
+  invitedBy           User?                                  @relation("DocumentInviteSender", fields: [invitedByUserId], references: [id], onDelete: SetNull)
   verificationSession DocumentInvitationVerificationSession?
   accessAuditLogs     DocumentAccessAuditLog[]
 
@@ -1285,4 +1292,214 @@ enum MaritalStatus {
   MARRIED
   DIVORCED
   WIDOWED
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// MEETINGS SERVICE TABLES (api/meetings/)
+// Owned by api/auth/ for migrations — api/meetings/ copies this schema and
+// runs `prisma generate` only. api/meetings owns business rules, Stream call
+// tokens, scheduling, invitations, recordings metadata, and meeting audit logs.
+// ═════════════════════════════════════════════════════════════════════════════
+
+// ─── Meetings ────────────────────────────────────────────────────────────────
+// Gracon-owned meeting record. Stream owns live media transport only; this row
+// owns Gracon permissions, schedule state, recording policy, and audit scope.
+model Meeting {
+  id                 String            @id @default(uuid())
+  ownerId            String
+  title              String            @db.VarChar(180)
+  description        String?           @db.Text
+  status             MeetingStatus     @default(DRAFT)
+  visibility         MeetingVisibility @default(INVITE_ONLY)
+  streamCallType     String            @default("default") @db.VarChar(60)
+  streamCallId       String            @unique @db.VarChar(160)
+  scheduledStartAt   DateTime?
+  scheduledEndAt     DateTime?
+  startedAt          DateTime?
+  endedAt            DateTime?
+  recordingEnabled   Boolean           @default(false)
+  waitingRoomEnabled Boolean           @default(true)
+  joinBeforeHost     Boolean           @default(false)
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  owner        User                 @relation("MeetingOwner", fields: [ownerId], references: [id])
+  participants MeetingParticipant[]
+  invites      MeetingInvite[]
+  recordings   MeetingRecording[]
+  auditLogs    MeetingAuditLog[]
+
+  @@index([ownerId, createdAt])
+  @@index([status, scheduledStartAt])
+  @@index([visibility, createdAt])
+  @@map("meetings")
+}
+
+// ─── Meeting Participants ────────────────────────────────────────────────────
+// Represents a user or external email invited to or present in a meeting.
+// userId is nullable so external invitees and preserved history survive user
+// deletion while still keeping internal Gracon users strongly linked.
+model MeetingParticipant {
+  id          String                   @id @default(uuid())
+  meetingId   String
+  userId      String?
+  email       String                   @db.VarChar(255)
+  displayName String?                  @db.VarChar(180)
+  role        MeetingParticipantRole   @default(PARTICIPANT)
+  status      MeetingParticipantStatus @default(INVITED)
+  joinedAt    DateTime?
+  leftAt      DateTime?
+  createdAt   DateTime                 @default(now())
+  updatedAt   DateTime                 @updatedAt
+
+  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  user    User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@unique([meetingId, userId])
+  @@index([meetingId, status])
+  @@index([userId, createdAt])
+  @@index([email])
+  @@map("meeting_participants")
+}
+
+// ─── Meeting Invites ─────────────────────────────────────────────────────────
+// Invite tokens are stored hashed only. Raw invite tokens are sent once by email
+// or copied link and can be revoked without deleting meeting audit history.
+model MeetingInvite {
+  id            String    @id @default(uuid())
+  meetingId     String
+  inviterId     String
+  invitedUserId String?
+  email         String    @db.VarChar(255)
+  tokenHash     String    @unique
+  expiresAt     DateTime
+  acceptedAt    DateTime?
+  revokedAt     DateTime?
+  createdAt     DateTime  @default(now())
+
+  meeting     Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  inviter     User    @relation("MeetingInviteSender", fields: [inviterId], references: [id])
+  invitedUser User?   @relation("MeetingInviteRecipient", fields: [invitedUserId], references: [id], onDelete: SetNull)
+
+  @@index([meetingId, createdAt])
+  @@index([invitedUserId, createdAt])
+  @@index([email])
+  @@index([expiresAt])
+  @@map("meeting_invites")
+}
+
+// ─── Meeting Recordings ──────────────────────────────────────────────────────
+// Stores provider recording metadata and future Gracon S3 archival references.
+// Access must always be checked through meeting membership before playback.
+model MeetingRecording {
+  id                  String                   @id @default(uuid())
+  meetingId           String
+  startedById         String?
+  status              MeetingRecordingStatus   @default(STARTING)
+  provider            MeetingRecordingProvider @default(STREAM)
+  providerRecordingId String?                  @unique
+  providerAssetUrl    String?                  @db.Text
+  s3Key               String?
+  durationSeconds     Int?
+  sizeBytes           Int?
+  startedAt           DateTime?
+  endedAt             DateTime?
+  createdAt           DateTime                 @default(now())
+  updatedAt           DateTime                 @updatedAt
+
+  meeting   Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  startedBy User?   @relation("MeetingRecordingStarter", fields: [startedById], references: [id], onDelete: SetNull)
+
+  @@index([meetingId, createdAt])
+  @@index([startedById, createdAt])
+  @@index([status, createdAt])
+  @@map("meeting_recordings")
+}
+
+// ─── Meeting Audit Logs ──────────────────────────────────────────────────────
+// Immutable event stream for meeting security and compliance. Every privileged
+// or user-visible action in api/meetings must write one row here.
+model MeetingAuditLog {
+  id           String            @id @default(uuid())
+  meetingId    String
+  actorId      String?
+  targetUserId String?
+  eventType    MeetingAuditEvent
+  metadata     Json?
+  ipAddress    String?
+  userAgent    String?
+  createdAt    DateTime          @default(now())
+
+  meeting    Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  actor      User?   @relation("MeetingAuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+  targetUser User?   @relation("MeetingAuditTarget", fields: [targetUserId], references: [id], onDelete: SetNull)
+
+  @@index([meetingId, createdAt])
+  @@index([actorId, createdAt])
+  @@index([targetUserId, createdAt])
+  @@index([eventType, createdAt])
+  @@map("meeting_audit_logs")
+}
+
+enum MeetingStatus {
+  DRAFT
+  SCHEDULED
+  LIVE
+  ENDED
+  CANCELLED
+}
+
+enum MeetingVisibility {
+  PRIVATE
+  INVITE_ONLY
+  LINK_ACCESS
+}
+
+enum MeetingParticipantRole {
+  HOST
+  CO_HOST
+  PARTICIPANT
+  VIEWER
+}
+
+enum MeetingParticipantStatus {
+  INVITED
+  ACCEPTED
+  DECLINED
+  JOINED
+  LEFT
+  REMOVED
+}
+
+enum MeetingRecordingStatus {
+  STARTING
+  RECORDING
+  PROCESSING
+  READY
+  FAILED
+  DELETED
+}
+
+enum MeetingRecordingProvider {
+  STREAM
+}
+
+enum MeetingAuditEvent {
+  MEETING_CREATED
+  MEETING_UPDATED
+  MEETING_SCHEDULED
+  MEETING_STARTED
+  MEETING_ENDED
+  MEETING_CANCELLED
+  PARTICIPANT_INVITED
+  PARTICIPANT_JOINED
+  PARTICIPANT_LEFT
+  PARTICIPANT_REMOVED
+  INVITE_ACCEPTED
+  INVITE_REVOKED
+  RECORDING_STARTED
+  RECORDING_STOPPED
+  RECORDING_READY
+  RECORDING_FAILED
+  STREAM_TOKEN_ISSUED
 }
