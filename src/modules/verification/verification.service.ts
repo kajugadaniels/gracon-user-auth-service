@@ -31,8 +31,8 @@ import { SecurityEventService } from '../../common/security/security-event.servi
 // Max attempts allowed within the retry window
 const MAX_ATTEMPTS = 3;
 
-// Window duration — attempts reset after this many hours
-const ATTEMPT_WINDOW_HOURS = 24;
+// Default window duration; deployments may override or disable it with env.
+const DEFAULT_ATTEMPT_WINDOW_HOURS = 24;
 
 interface VerificationWindowState {
   attemptsUsed: number;
@@ -46,6 +46,7 @@ export class VerificationService {
   private readonly logger = new Logger(VerificationService.name);
   private readonly engineUrl: string;
   private readonly engineApiKey: string;
+  private readonly attemptWindowHours: number;
 
   // Engine request timeout — must be longer than Rekognition's own timeout
   private readonly ENGINE_TIMEOUT_MS = 45_000; // 45 seconds
@@ -67,6 +68,10 @@ export class VerificationService {
       throw new Error('ENGINE_API_KEY environment variable is not set');
     this.engineUrl = engineUrl;
     this.engineApiKey = engineApiKey;
+    this.attemptWindowHours = this.config.get<number>(
+      'VERIFICATION_ATTEMPT_WINDOW_HOURS',
+      DEFAULT_ATTEMPT_WINDOW_HOURS,
+    );
   }
 
   // ─── Main verification flow ───────────────────────────────────────────────
@@ -291,8 +296,9 @@ export class VerificationService {
     // Use the windowed count returned by enforceAttemptLimit (before this
     // attempt) + 1 for the response. Using the cumulative attemptNumber here
     // would report the wrong remaining count for users who have retried after
-    // the 24-hour window: a user with 3 total all-time attempts would see
-    // "0 remaining" on day 2 even though the gate already let them through.
+    // the configured attempt window: a user with 3 total all-time attempts
+    // would see "0 remaining" after the window even though the gate already
+    // let them through.
     const windowState = await this.getVerificationWindowState(userId);
     const attemptsUsed = windowState.attemptsUsed;
     const attemptsRemaining = windowState.attemptsRemaining;
@@ -318,13 +324,16 @@ export class VerificationService {
         ? isInvitationChallenge
           ? 'Identity verification successful. You can return to the invitation.'
           : 'Identity verification successful. You can now log in.'
-        : `Verification failed. ${attemptsRemaining} attempt(s) remaining.`,
+        : this.isAttemptWindowEnabled()
+          ? `Verification failed. ${attemptsRemaining} attempt(s) remaining.`
+          : 'Verification failed. You can try again.',
       failReason: engineResponse.fail_reason,
       attemptsUsed,
       attemptsRemaining,
       lockout: {
         maxAttempts: MAX_ATTEMPTS,
-        attemptWindowHours: ATTEMPT_WINDOW_HOURS,
+        attemptWindowHours: this.attemptWindowHours,
+        attemptLimitEnabled: this.isAttemptWindowEnabled(),
         retryAvailableAt: windowState.retryAvailableAt?.toISOString() ?? null,
         retryAfterSeconds: windowState.retryAfterSeconds,
       },
@@ -359,7 +368,6 @@ export class VerificationService {
     const windowState = await this.getVerificationWindowState(userId);
 
     return {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       isIdVerified: user?.isIdVerified ?? false,
       attemptsUsed: windowState.attemptsUsed,
       attemptsRemaining: windowState.attemptsRemaining,
@@ -368,7 +376,8 @@ export class VerificationService {
       lastAttemptAt: user?.idVerifications[0]?.createdAt?.toISOString() ?? null,
       lockout: {
         maxAttempts: MAX_ATTEMPTS,
-        attemptWindowHours: ATTEMPT_WINDOW_HOURS,
+        attemptWindowHours: this.attemptWindowHours,
+        attemptLimitEnabled: this.isAttemptWindowEnabled(),
         retryAvailableAt: windowState.retryAvailableAt?.toISOString() ?? null,
         retryAfterSeconds: windowState.retryAfterSeconds,
       },
@@ -378,17 +387,21 @@ export class VerificationService {
   // ─── Private helpers ──────────────────────────────────────────────────────
 
   /**
-   * Counts attempts in the current 24-hour window and throws if the limit
+   * Counts attempts in the configured attempt window and throws if the limit
    * is reached. Returns the count so the caller can report accurate
    * attemptsUsed / attemptsRemaining in the response without a second query.
    *
    * The gate deliberately uses the windowed idVerification count — not the
    * cumulative verificationAttempts field on User. The cumulative counter
    * exists for admin visibility only and must never be used as a gate,
-   * otherwise a user who exhausts their 3 attempts on day 1 is permanently
-   * locked even after the window expires.
+   * otherwise a user who exhausts their 3 attempts in one window is
+   * permanently locked even after the window expires.
    */
   private async enforceAttemptLimit(userId: string): Promise<number> {
+    if (!this.isAttemptWindowEnabled()) {
+      return 0;
+    }
+
     const windowState = await this.getVerificationWindowState(userId);
 
     if (windowState.attemptsUsed >= MAX_ATTEMPTS) {
@@ -396,7 +409,7 @@ export class VerificationService {
         `Verification attempt limit reached for user: ${userId}`,
       );
       throw new TooManyVerificationAttemptsException(
-        ATTEMPT_WINDOW_HOURS,
+        this.attemptWindowHours,
         windowState.retryAvailableAt,
         windowState.retryAfterSeconds,
       );
@@ -408,8 +421,17 @@ export class VerificationService {
   private async getVerificationWindowState(
     userId: string,
   ): Promise<VerificationWindowState> {
+    if (!this.isAttemptWindowEnabled()) {
+      return {
+        attemptsUsed: 0,
+        attemptsRemaining: MAX_ATTEMPTS,
+        retryAvailableAt: null,
+        retryAfterSeconds: null,
+      };
+    }
+
     const windowStart = new Date(
-      Date.now() - ATTEMPT_WINDOW_HOURS * 60 * 60 * 1000,
+      Date.now() - this.attemptWindowHours * 60 * 60 * 1000,
     );
 
     const attempts = await this.prisma.idVerification.findMany({
@@ -427,7 +449,7 @@ export class VerificationService {
       attemptsUsed >= MAX_ATTEMPTS
         ? new Date(
             attempts[0].createdAt.getTime() +
-              ATTEMPT_WINDOW_HOURS * 60 * 60 * 1000,
+              this.attemptWindowHours * 60 * 60 * 1000,
           )
         : null;
     const retryAfterSeconds = retryAvailableAt
@@ -443,15 +465,23 @@ export class VerificationService {
   }
 
   /**
+   * Returns whether the business-level attempt window is active.
+   * A value of 0 is intentionally supported for local development and
+   * controlled testing where repeated engine checks are expected.
+   */
+  private isAttemptWindowEnabled(): boolean {
+    return this.attemptWindowHours > 0;
+  }
+
+  /**
    * Gets the next attempt number for a user.
    * Used in the audit log — attempt 1, 2, or 3.
    */
   private async getNextAttemptNumber(userId: string): Promise<number> {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
     const count = await this.prisma.idVerification.count({
       where: { userId },
     });
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+
     return count + 1;
   }
 
@@ -515,7 +545,6 @@ export class VerificationService {
     ipAddress: string;
   }): Promise<void> {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
       await this.prisma.idVerification.create({
         data: {
           userId: data.userId,
