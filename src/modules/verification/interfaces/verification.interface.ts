@@ -21,14 +21,15 @@ export interface EngineVerificationResponse {
 // Identity details from the citizen record — returned so the frontend can show
 // the user their confirmed name, date of birth, and masked document number
 export interface VerificationIdInfo {
-  fullName: string;       // surName + postNames from CitizenIdentity
-  dateOfBirth: string;    // ISO 8601 date string
+  fullName: string; // surName + postNames from CitizenIdentity
+  dateOfBirth: string; // ISO 8601 date string
   documentNumber: string; // the document number the user typed (already validated)
 }
 
 export interface VerificationLockoutState {
   maxAttempts: number;
   attemptWindowHours: number;
+  attemptLimitEnabled: boolean;
   retryAvailableAt: string | null;
   retryAfterSeconds: number | null;
 }
