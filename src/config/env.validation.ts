@@ -150,6 +150,15 @@ class EnvironmentVariables {
       'ENGINE_API_KEY is required (must match the engine ENGINE_API_KEY)',
   })
   ENGINE_API_KEY!: string;
+
+  // ─── Identity Verification Attempts ──────────────────────────────────────
+  @IsOptional()
+  @IsInt({ message: 'VERIFICATION_ATTEMPT_WINDOW_HOURS must be an integer' })
+  @Min(0, {
+    message:
+      'VERIFICATION_ATTEMPT_WINDOW_HOURS must be 0 or greater. Use 0 to disable the business attempt window.',
+  })
+  VERIFICATION_ATTEMPT_WINDOW_HOURS: number = 24;
 }
 
 /**
