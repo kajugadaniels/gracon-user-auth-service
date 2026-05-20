@@ -49,7 +49,7 @@ export class VerificationController {
    * POST /api/v1/verification/submit
    * Strict limit: 3 per 10 minutes per IP.
    * Each submission calls AWS Rekognition — has a real cost.
-   * Also mirrors the business rule of max 3 attempts per day.
+   * Also mirrors the configurable business rule of max attempts per window.
    */
   @Post('submit')
   @ThrottleStrict()
@@ -72,7 +72,7 @@ export class VerificationController {
       'a freshly registered user (with a limited token) calls to upgrade their account to full access.\n\n' +
       '**Seven-step processing pipeline:**\n' +
       '1. **Gate checks** — user must exist, email must be verified, account must be active, and not yet ID-verified\n' +
-      '2. **Attempt limit** — maximum 3 attempts per 24-hour window (hard business rule); remaining count returned in every response\n' +
+      '2. **Attempt limit** — maximum 3 attempts per configured window; set `VERIFICATION_ATTEMPT_WINDOW_HOURS=0` to disable this business window in controlled environments\n' +
       '3. **NID match** — the submitted `documentNumber` is compared against the AES-256-CBC encrypted NID stored at registration; ' +
       'the raw NID is never forwarded to the verification engine\n' +
       '4. **Parallel S3 upload** — both images are uploaded simultaneously to `verification-temp/` in S3\n' +
@@ -151,6 +151,7 @@ export class VerificationController {
         lockout: {
           maxAttempts: 3,
           attemptWindowHours: 24,
+          attemptLimitEnabled: true,
           retryAvailableAt: null,
           retryAfterSeconds: null,
         },
@@ -190,6 +191,7 @@ export class VerificationController {
         lockout: {
           maxAttempts: 3,
           attemptWindowHours: 24,
+          attemptLimitEnabled: true,
           retryAvailableAt: null,
           retryAfterSeconds: null,
         },
@@ -214,7 +216,7 @@ export class VerificationController {
   @ApiResponse({
     status: 403,
     description:
-      'The 3-attempt daily limit has been reached. The user must wait until 24 hours have elapsed since their first attempt today.',
+      'The configured verification attempt limit has been reached. The user must wait until the configured attempt window has elapsed since their first counted attempt.',
     schema: {
       example: {
         statusCode: 403,
@@ -291,9 +293,10 @@ export class VerificationController {
       '| Field | Type | Meaning |\n' +
       '|-------|------|---------|\n' +
       '| `isIdVerified` | boolean | Whether the user has passed ID verification |\n' +
-      '| `attemptsUsed` | number | Number of attempts made within the current 24-hour window |\n' +
-      '| `attemptsRemaining` | number | How many more attempts are available today (max 3 per 24 h) |\n' +
+      '| `attemptsUsed` | number | Number of attempts made within the configured attempt window |\n' +
+      '| `attemptsRemaining` | number | How many more attempts are available in the configured window |\n' +
       '| `canAttempt` | boolean | `true` if `attemptsRemaining > 0` and account is not yet verified |\n' +
+      '| `lockout.attemptLimitEnabled` | boolean | `false` when `VERIFICATION_ATTEMPT_WINDOW_HOURS=0` disables the business attempt window |\n' +
       '| `lastAttemptAt` | string \\| null | ISO timestamp of the most recent submission, or `null` if none |\n' +
       '| `lockout.retryAvailableAt` | string \\| null | Exact retry timestamp when the user is locked out |\n' +
       '| `lockout.retryAfterSeconds` | number \\| null | Remaining seconds until retry is allowed |\n\n' +
@@ -312,6 +315,7 @@ export class VerificationController {
         lockout: {
           maxAttempts: 3,
           attemptWindowHours: 24,
+          attemptLimitEnabled: true,
           retryAvailableAt: null,
           retryAfterSeconds: null,
         },
@@ -332,6 +336,7 @@ export class VerificationController {
         lockout: {
           maxAttempts: 3,
           attemptWindowHours: 24,
+          attemptLimitEnabled: true,
           retryAvailableAt: null,
           retryAfterSeconds: null,
         },
