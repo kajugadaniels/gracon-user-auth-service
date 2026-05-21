@@ -11,7 +11,11 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
-import { IdentityType, UserInviteVerificationPreference } from '@prisma/client';
+import {
+  IdentityType,
+  SecurityEvent,
+  UserInviteVerificationPreference,
+} from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { EncryptionService } from '../../common/crypto/encryption.service';
 import { S3Service } from '../../common/aws/s3/s3.service';
@@ -29,6 +33,12 @@ import {
   UserInviteVerificationPreferenceDtoValue,
   UserPreferencesResponseDto,
 } from './dto/user-preferences.dto';
+import {
+  UserActivityCategoryDtoValue,
+  UserActivityOrderDtoValue,
+  UserActivityQueryDto,
+  UserActivityResponseDto,
+} from './dto/user-activity.dto';
 import { RegistrationResult } from './interfaces/registration-result.interface';
 import { SecurityEventService } from '../../common/security/security-event.service';
 import {
@@ -55,6 +65,109 @@ interface UserPreferenceRecord {
   defaultDocumentInviteVerifications: UserInviteVerificationPreference[];
   defaultMeetingInviteVerifications: UserInviteVerificationPreference[];
 }
+
+type UserActivityVisibleCategory = Exclude<
+  UserActivityCategoryDtoValue,
+  UserActivityCategoryDtoValue.ALL
+>;
+
+interface UserActivityPresentation {
+  category: UserActivityVisibleCategory;
+  title: string;
+  description: string;
+  tone: 'success' | 'warning' | 'danger' | 'neutral';
+}
+
+const USER_ACTIVITY_PRESENTATION: Record<
+  SecurityEvent,
+  UserActivityPresentation
+> = {
+  [SecurityEvent.LOGIN_SUCCESS]: {
+    category: UserActivityCategoryDtoValue.AUTHENTICATION,
+    title: 'Successful sign in',
+    description: 'Your account was accessed with a valid password and session.',
+    tone: 'success',
+  },
+  [SecurityEvent.LOGIN_FAILED]: {
+    category: UserActivityCategoryDtoValue.AUTHENTICATION,
+    title: 'Failed sign-in attempt',
+    description:
+      'A sign-in attempt for your account was rejected before a session was created.',
+    tone: 'warning',
+  },
+  [SecurityEvent.VERIFICATION_PASSED]: {
+    category: UserActivityCategoryDtoValue.VERIFICATION,
+    title: 'Identity verification passed',
+    description:
+      'Your identity verification challenge was completed successfully.',
+    tone: 'success',
+  },
+  [SecurityEvent.VERIFICATION_FAILED]: {
+    category: UserActivityCategoryDtoValue.VERIFICATION,
+    title: 'Identity verification failed',
+    description:
+      'An identity verification attempt did not pass the required checks.',
+    tone: 'warning',
+  },
+  [SecurityEvent.PASSWORD_RESET_REQUESTED]: {
+    category: UserActivityCategoryDtoValue.ACCOUNT,
+    title: 'Password reset requested',
+    description:
+      'A password reset email was requested for your account.',
+    tone: 'neutral',
+  },
+  [SecurityEvent.PASSWORD_CHANGED]: {
+    category: UserActivityCategoryDtoValue.ACCOUNT,
+    title: 'Password changed',
+    description:
+      'Your password was changed and existing sessions were revoked.',
+    tone: 'success',
+  },
+  [SecurityEvent.SESSIONS_REVOKED_BY_USER]: {
+    category: UserActivityCategoryDtoValue.ACCOUNT,
+    title: 'Sessions revoked',
+    description:
+      'Active sessions were revoked from your account security controls.',
+    tone: 'neutral',
+  },
+  [SecurityEvent.REVOKED_TOKEN_REUSE]: {
+    category: UserActivityCategoryDtoValue.SECURITY,
+    title: 'Revoked token reuse blocked',
+    description:
+      'A reused refresh token was detected and blocked by the auth service.',
+    tone: 'danger',
+  },
+  [SecurityEvent.RATE_LIMIT_EXCEEDED]: {
+    category: UserActivityCategoryDtoValue.SECURITY,
+    title: 'Rate limit reached',
+    description:
+      'A protected action hit the account protection rate limit.',
+    tone: 'warning',
+  },
+};
+
+const USER_ACTIVITY_EVENTS_BY_CATEGORY: Record<
+  UserActivityVisibleCategory,
+  SecurityEvent[]
+> = {
+  [UserActivityCategoryDtoValue.AUTHENTICATION]: [
+    SecurityEvent.LOGIN_SUCCESS,
+    SecurityEvent.LOGIN_FAILED,
+  ],
+  [UserActivityCategoryDtoValue.VERIFICATION]: [
+    SecurityEvent.VERIFICATION_PASSED,
+    SecurityEvent.VERIFICATION_FAILED,
+  ],
+  [UserActivityCategoryDtoValue.ACCOUNT]: [
+    SecurityEvent.PASSWORD_RESET_REQUESTED,
+    SecurityEvent.PASSWORD_CHANGED,
+    SecurityEvent.SESSIONS_REVOKED_BY_USER,
+  ],
+  [UserActivityCategoryDtoValue.SECURITY]: [
+    SecurityEvent.REVOKED_TOKEN_REUSE,
+    SecurityEvent.RATE_LIMIT_EXCEEDED,
+  ],
+};
 
 @Injectable()
 export class UsersService {
@@ -670,6 +783,86 @@ export class UsersService {
   }
 
   /**
+   * Returns a paginated, read-only view of the authenticated user's activity.
+   *
+   * The source rows are immutable security events. This method intentionally
+   * maps them into safe presentation fields instead of exposing raw metadata,
+   * because security-event metadata can contain internal context that belongs
+   * in operational logs, not the user-facing account surface.
+   *
+   * @param userId - Authenticated user id from the validated JWT.
+   * @param query - Pagination, ordering, filter, and search controls.
+   * @returns Paginated activity rows scoped to the authenticated user only.
+   */
+  async getActivity(
+    userId: string,
+    query: UserActivityQueryDto,
+  ): Promise<UserActivityResponseDto> {
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 12;
+    const eventTypes = this.resolveUserActivityEventTypes(query);
+
+    if (eventTypes.length === 0) {
+      return {
+        items: [],
+        pagination: {
+          page,
+          pageSize,
+          totalItems: 0,
+          totalPages: 0,
+        },
+      };
+    }
+
+    const where = {
+      userId,
+      eventType: { in: eventTypes },
+    };
+
+    const [totalItems, events] = await Promise.all([
+      this.prisma.securityEventLog.count({ where }),
+      this.prisma.securityEventLog.findMany({
+        where,
+        select: {
+          id: true,
+          eventType: true,
+          ipAddress: true,
+          createdAt: true,
+        },
+        orderBy: {
+          createdAt:
+            query.order === UserActivityOrderDtoValue.OLDEST ? 'asc' : 'desc',
+        },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+    ]);
+
+    return {
+      items: events.map((event) => {
+        const presentation = USER_ACTIVITY_PRESENTATION[event.eventType];
+
+        return {
+          id: event.id,
+          eventType: event.eventType,
+          category: presentation.category,
+          title: presentation.title,
+          description: presentation.description,
+          tone: presentation.tone,
+          createdAt: event.createdAt,
+          ipAddress: event.ipAddress,
+        };
+      }),
+      pagination: {
+        page,
+        pageSize,
+        totalItems,
+        totalPages: Math.ceil(totalItems / pageSize),
+      },
+    };
+  }
+
+  /**
    * Returns the full safe profile for the authenticated user.
    *
    * - Citizen identity fields (name, DOB, sex, country) are included.
@@ -780,6 +973,41 @@ export class UsersService {
           'Meeting invitation defaults',
         ),
     };
+  }
+
+  /**
+   * Resolves a safe list of security-event types for the user activity query.
+   *
+   * @param query - Filter and search controls supplied by the client.
+   * @returns Event types eligible for the final Prisma query.
+   */
+  private resolveUserActivityEventTypes(
+    query: UserActivityQueryDto,
+  ): SecurityEvent[] {
+    const category = query.category ?? UserActivityCategoryDtoValue.ALL;
+    const baseEvents =
+      category === UserActivityCategoryDtoValue.ALL
+        ? Object.values(SecurityEvent)
+        : USER_ACTIVITY_EVENTS_BY_CATEGORY[category];
+    const search = query.search?.toLowerCase();
+
+    if (!search) {
+      return baseEvents;
+    }
+
+    return baseEvents.filter((eventType) => {
+      const presentation = USER_ACTIVITY_PRESENTATION[eventType];
+      const searchableText = [
+        eventType,
+        presentation.category,
+        presentation.title,
+        presentation.description,
+      ]
+        .join(' ')
+        .toLowerCase();
+
+      return searchableText.includes(search);
+    });
   }
 
   /**
