@@ -20,6 +20,7 @@ This service owns user registration, login, email verification, password reset, 
 - Refresh-token rotation and revocation
 - Email verification and password reset
 - Profile read/update
+- Read-only user activity feed backed by immutable security-event logs
 - Citizen lookup integration
 - Foreign identity lookup integration for FIN-backed registration
 - ID + selfie verification workflow via the internal engine
@@ -29,6 +30,7 @@ This service owns user registration, login, email verification, password reset, 
 - Shared persistence for per-user certificate access policy, so revocation history and hard certificate bans stay separate
 - Shared persistence for Gracon meetings tables used by `api/meetings`; migrations stay here while `api/meetings` mirrors the schema and runs Prisma generate only
 - Shared persistence for user-level invitation defaults consumed by `app/documents` and `app/meetings`
+- User-facing account activity is served from `SecurityEventLog` through a presentation-safe read-only endpoint. Do not expose raw event metadata to frontend apps.
 
 ## Core Skills Needed
 
@@ -69,7 +71,7 @@ src/
     auth/           registration, login, refresh, logout, password reset
     citizen/        citizen lookup and cache
     foreign-identity/ FIN lookup client for foreign-user registration
-    users/          profile, preferences, and account operations
+    users/          profile, preferences, activity feed, and account operations
     verification/   ID verification submission and result handling
 ```
 
