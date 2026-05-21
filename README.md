@@ -28,6 +28,7 @@ This service owns user registration, login, email verification, password reset, 
 - Shared admin-audit enum values for certificate-request approval and rejection actions emitted by `api/admin`
 - Shared persistence for per-user certificate access policy, so revocation history and hard certificate bans stay separate
 - Shared persistence for Gracon meetings tables used by `api/meetings`; migrations stay here while `api/meetings` mirrors the schema and runs Prisma generate only
+- Shared persistence for user-level invitation defaults consumed by `app/documents` and `app/meetings`
 
 ## Core Skills Needed
 
@@ -68,7 +69,7 @@ src/
     auth/           registration, login, refresh, logout, password reset
     citizen/        citizen lookup and cache
     foreign-identity/ FIN lookup client for foreign-user registration
-    users/          profile and account operations
+    users/          profile, preferences, and account operations
     verification/   ID verification submission and result handling
 ```
 
@@ -169,6 +170,7 @@ Safety rules:
 
 - This service owns shared schema migrations
 - Meeting table changes must be made here first, then copied to `api/meetings/prisma/schema.prisma`
+- Cross-platform user preference changes must be made here first. Documents and meetings consume those settings as UI defaults but still enforce their own backend invitation gates.
 - Never store NID/PID or refresh tokens in plain text
 - Limited-token routes must be explicit
 - A verified user with a stale limited session should be upgraded through `POST /auth/session/upgrade`, not forced to logout
@@ -182,6 +184,26 @@ Safety rules:
 - Validate uploads, sizes, MIME types, and token type up front
 - Preserve the distinction between auth issuance and auth validation
 - Update `.env.example` when new required config is introduced
+
+## User Preferences
+
+`api/auth` owns the `user_preferences` table because invitation defaults follow
+the user across Gracon frontends. The first settings are intentionally small:
+
+- `defaultDocumentInviteVerifications`
+- `defaultMeetingInviteVerifications`
+
+Both fields use `UserInviteVerificationPreference[]` and default to
+`[NO_VERIFICATION]`. `NO_VERIFICATION` is exclusive; the service rejects any
+request that combines it with `EMAIL_OTP` or `IDENTITY_VERIFICATION`.
+
+Implemented endpoints:
+
+- `GET /api/v1/users/preferences` returns saved preferences or the no-verification defaults when no row exists yet.
+- `PATCH /api/v1/users/preferences` updates one or both preference fields.
+
+These settings only preselect invite-dialog UI in `app/documents` and
+`app/meetings`. They never bypass downstream document or meeting access checks.
 
 ## Testing Rule
 
