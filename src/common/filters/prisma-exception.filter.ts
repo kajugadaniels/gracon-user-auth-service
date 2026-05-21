@@ -31,16 +31,11 @@ import { Request, Response } from 'express';
 // Convenience aliases — the error classes live inside the Prisma namespace,
 // not as top-level exports, which is why direct named imports fail under
 // nodenext module resolution.
-type PrismaClientKnownRequestError =
-  Prisma.PrismaClientKnownRequestError;
-type PrismaClientUnknownRequestError =
-  Prisma.PrismaClientUnknownRequestError;
-type PrismaClientRustPanicError =
-  Prisma.PrismaClientRustPanicError;
-type PrismaClientInitializationError =
-  Prisma.PrismaClientInitializationError;
-type PrismaClientValidationError =
-  Prisma.PrismaClientValidationError;
+type PrismaClientKnownRequestError = Prisma.PrismaClientKnownRequestError;
+type PrismaClientUnknownRequestError = Prisma.PrismaClientUnknownRequestError;
+type PrismaClientRustPanicError = Prisma.PrismaClientRustPanicError;
+type PrismaClientInitializationError = Prisma.PrismaClientInitializationError;
+type PrismaClientValidationError = Prisma.PrismaClientValidationError;
 
 type AnyPrismaError =
   | PrismaClientKnownRequestError
@@ -144,7 +139,8 @@ export class PrismaExceptionFilter implements ExceptionFilter {
       // Return 503 so upstream load balancers and health checks handle it correctly.
       return {
         status: HttpStatus.SERVICE_UNAVAILABLE,
-        message: 'The service is temporarily unavailable. Please try again shortly.',
+        message:
+          'The service is temporarily unavailable. Please try again shortly.',
       };
     }
 

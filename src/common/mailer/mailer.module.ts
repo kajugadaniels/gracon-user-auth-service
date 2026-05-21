@@ -8,7 +8,6 @@ import { AppMailerService } from './mailer.service';
 @Global()
 @Module({
   imports: [
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
     NestMailerModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

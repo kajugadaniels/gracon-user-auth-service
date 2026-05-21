@@ -23,7 +23,8 @@ export class CitizenApiUnavailableException extends HttpException {
       {
         statusCode: HttpStatus.SERVICE_UNAVAILABLE,
         error: 'Citizen API Unavailable',
-        message: 'National ID verification service is temporarily unavailable. Please try again later.',
+        message:
+          'National ID verification service is temporarily unavailable. Please try again later.',
       },
       HttpStatus.SERVICE_UNAVAILABLE,
     );
@@ -36,7 +37,8 @@ export class CitizenApiTimeoutException extends HttpException {
       {
         statusCode: HttpStatus.GATEWAY_TIMEOUT,
         error: 'Citizen API Timeout',
-        message: 'National ID verification service timed out. Please try again.',
+        message:
+          'National ID verification service timed out. Please try again.',
       },
       HttpStatus.GATEWAY_TIMEOUT,
     );

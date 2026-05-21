@@ -15,7 +15,8 @@ import { ApiProperty } from '@nestjs/swagger';
  */
 export class ChangePasswordDto {
   @ApiProperty({
-    description: 'The user\'s current password — used to confirm identity before changing.',
+    description:
+      "The user's current password — used to confirm identity before changing.",
     example: 'OldPass@123',
     format: 'password',
   })

@@ -64,7 +64,8 @@ export class PasswordResetController {
   })
   @ApiResponse({
     status: 400,
-    description: 'Request body failed validation (e.g. the email field is not a valid email address).',
+    description:
+      'Request body failed validation (e.g. the email field is not a valid email address).',
     schema: {
       example: {
         statusCode: 400,
@@ -75,7 +76,8 @@ export class PasswordResetController {
   })
   @ApiResponse({
     status: 429,
-    description: 'Rate limit exceeded — more than 5 requests per minute from this IP address.',
+    description:
+      'Rate limit exceeded — more than 5 requests per minute from this IP address.',
     schema: {
       example: {
         statusCode: 429,
@@ -128,27 +130,32 @@ export class PasswordResetController {
   })
   @ApiResponse({
     status: 200,
-    description: 'Validation result returned. Check `valid` to determine whether to show the reset form.',
+    description:
+      'Validation result returned. Check `valid` to determine whether to show the reset form.',
     schema: {
       example: {
         valid: true,
-        message: 'Reset token is valid. You may proceed to reset your password.',
+        message:
+          'Reset token is valid. You may proceed to reset your password.',
       },
     },
   })
   @ApiResponse({
     status: 200,
-    description: 'Token is invalid or expired. The `valid` field will be `false`.',
+    description:
+      'Token is invalid or expired. The `valid` field will be `false`.',
     schema: {
       example: {
         valid: false,
-        message: 'This reset link has expired or has already been used. Please request a new one.',
+        message:
+          'This reset link has expired or has already been used. Please request a new one.',
       },
     },
   })
   @ApiResponse({
     status: 429,
-    description: 'Rate limit exceeded — more than 5 validation attempts per minute from this IP address.',
+    description:
+      'Rate limit exceeded — more than 5 validation attempts per minute from this IP address.',
     schema: {
       example: {
         statusCode: 429,
@@ -174,7 +181,7 @@ export class PasswordResetController {
   @ApiOperation({
     summary: 'Set a new password using a reset token',
     description:
-      'Consumes a valid reset token and replaces the account\'s password with the new value. ' +
+      "Consumes a valid reset token and replaces the account's password with the new value. " +
       'The reset token is one-time use — this endpoint marks it as used so it cannot be replayed.\n\n' +
       '**What happens after a successful reset:**\n' +
       '1. The new password is hashed with bcrypt (12 rounds) and stored\n' +
@@ -193,7 +200,8 @@ export class PasswordResetController {
     schema: {
       example: {
         success: true,
-        message: 'Password reset successfully. Please log in with your new password.',
+        message:
+          'Password reset successfully. Please log in with your new password.',
       },
     },
   })
@@ -205,13 +213,15 @@ export class PasswordResetController {
     schema: {
       example: {
         statusCode: 400,
-        message: 'This reset link is invalid or has expired. Please request a new one.',
+        message:
+          'This reset link is invalid or has expired. Please request a new one.',
       },
     },
   })
   @ApiResponse({
     status: 429,
-    description: 'Rate limit exceeded — more than 3 reset attempts per 10 minutes from this IP address.',
+    description:
+      'Rate limit exceeded — more than 3 reset attempts per 10 minutes from this IP address.',
     schema: {
       example: {
         statusCode: 429,

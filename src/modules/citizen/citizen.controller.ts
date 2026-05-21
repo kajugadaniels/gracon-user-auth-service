@@ -1,10 +1,5 @@
 import { Controller, Post, Body, HttpCode, HttpStatus } from '@nestjs/common';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiBody,
-  ApiResponse,
-} from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBody, ApiResponse } from '@nestjs/swagger';
 import { CitizenService } from './citizen.service';
 import { LookupCitizenDto } from './dto/lookup-citizen.dto';
 import { ThrottleAuth } from '../../common/decorators/throttle.decorator';
@@ -79,13 +74,15 @@ export class CitizenController {
     schema: {
       example: {
         statusCode: 503,
-        message: 'The citizen database is temporarily unavailable. Please try again.',
+        message:
+          'The citizen database is temporarily unavailable. Please try again.',
       },
     },
   })
   @ApiResponse({
     status: 429,
-    description: 'Rate limit exceeded — more than 5 lookup requests per minute from this IP address.',
+    description:
+      'Rate limit exceeded — more than 5 lookup requests per minute from this IP address.',
     schema: {
       example: {
         statusCode: 429,

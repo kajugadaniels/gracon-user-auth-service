@@ -13,11 +13,10 @@ export class TokenCleanupTask {
    * Keeps the refresh_tokens table lean.
    * Old tokens have zero security value once expired/revoked.
    */
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+
   @Cron(CronExpression.EVERY_DAY_AT_2AM)
   async cleanupExpiredTokens(): Promise<void> {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
       const result = await this.prisma.refreshToken.deleteMany({
         where: {
           OR: [
@@ -27,10 +26,8 @@ export class TokenCleanupTask {
         },
       });
 
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       if (result.count > 0) {
         this.logger.log(
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
           `Token cleanup: deleted ${result.count} expired/revoked tokens`,
         );
       }

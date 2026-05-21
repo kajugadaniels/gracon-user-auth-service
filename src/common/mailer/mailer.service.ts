@@ -48,10 +48,9 @@ export class AppMailerService {
     const verificationUrl = `${this.frontendUrl}/verify-email?userId=${userId}&token=${encodeURIComponent(token)}`;
 
     try {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
       await this.mailerService.sendMail({
         to,
-        subject:  'Verify your email address',
+        subject: 'Verify your email address',
         template: 'email-verification',
         context: {
           surName,
@@ -73,7 +72,6 @@ export class AppMailerService {
     const { to, surName, postNames, platformId } = params;
 
     try {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
       await this.mailerService.sendMail({
         to,
         subject: 'Welcome — your account is active',
@@ -103,7 +101,6 @@ export class AppMailerService {
     const resetUrl = `${this.frontendUrl}/reset-password?userId=${userId}&token=${encodeURIComponent(token)}`;
 
     try {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
       await this.mailerService.sendMail({
         to,
         subject: 'Reset your password',

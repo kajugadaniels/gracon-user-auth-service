@@ -33,10 +33,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     // Log the full stack trace server-side — never include it in the response
     const stack =
       exception instanceof Error ? exception.stack : String(exception);
-    this.logger.error(
-      `Unhandled exception — ${req.method} ${req.path}`,
-      stack,
-    );
+    this.logger.error(`Unhandled exception — ${req.method} ${req.path}`, stack);
 
     res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
       statusCode: HttpStatus.INTERNAL_SERVER_ERROR,

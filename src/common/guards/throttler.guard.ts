@@ -1,9 +1,6 @@
 import { Injectable, Inject, ExecutionContext } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import {
-  ThrottlerGuard,
-  ThrottlerException,
-} from '@nestjs/throttler';
+import { ThrottlerGuard, ThrottlerException } from '@nestjs/throttler';
 import type { ThrottlerLimitDetail } from '@nestjs/throttler/dist/throttler.guard.interface';
 import { Request } from 'express';
 import { SecurityEventService } from '../security/security-event.service';

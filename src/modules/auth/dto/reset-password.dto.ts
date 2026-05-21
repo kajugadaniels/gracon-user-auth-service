@@ -4,7 +4,7 @@ import { ApiProperty } from '@nestjs/swagger';
 export class ResetPasswordDto {
   @ApiProperty({
     description:
-      'The UUID of the user performing the reset. Embedded in the reset link sent to the user\'s inbox. ' +
+      "The UUID of the user performing the reset. Embedded in the reset link sent to the user's inbox. " +
       'Copy it exactly from the URL — do not modify it.',
     example: 'a3f2c1d4-8b7e-4f6a-9c2d-1e5b3a7f8d9c',
     format: 'uuid',
@@ -34,7 +34,8 @@ export class ResetPasswordDto {
     minLength: 8,
     maxLength: 128,
     format: 'password',
-    pattern: '^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[@$!%*?&^#])[A-Za-z\\d@$!%*?&^#]',
+    pattern:
+      '^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[@$!%*?&^#])[A-Za-z\\d@$!%*?&^#]',
   })
   @IsString()
   @Length(8, 128, { message: 'Password must be between 8 and 128 characters' })
@@ -45,7 +46,8 @@ export class ResetPasswordDto {
   newPassword!: string;
 
   @ApiProperty({
-    description: 'Must be identical to `newPassword`. Used to confirm the user typed the intended password correctly.',
+    description:
+      'Must be identical to `newPassword`. Used to confirm the user typed the intended password correctly.',
     example: 'NewKwizera@2025!',
     format: 'password',
   })

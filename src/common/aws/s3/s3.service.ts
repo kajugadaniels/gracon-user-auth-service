@@ -32,7 +32,7 @@ const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 export type AllowedImageType = (typeof ALLOWED_IMAGE_TYPES)[number];
 
 export interface UploadResult {
-  key: string;   // S3 object key — used to reference the file
+  key: string; // S3 object key — used to reference the file
   bucket: string;
 }
 
@@ -58,10 +58,13 @@ export class S3Service {
     const accessKeyId = this.config.get<string>('AWS_ACCESS_KEY_ID');
     const secretAccessKey = this.config.get<string>('AWS_SECRET_ACCESS_KEY');
 
-    if (!bucket) throw new Error('AWS_S3_BUCKET_NAME environment variable is not set');
+    if (!bucket)
+      throw new Error('AWS_S3_BUCKET_NAME environment variable is not set');
     if (!region) throw new Error('AWS_REGION environment variable is not set');
-    if (!accessKeyId) throw new Error('AWS_ACCESS_KEY_ID environment variable is not set');
-    if (!secretAccessKey) throw new Error('AWS_SECRET_ACCESS_KEY environment variable is not set');
+    if (!accessKeyId)
+      throw new Error('AWS_ACCESS_KEY_ID environment variable is not set');
+    if (!secretAccessKey)
+      throw new Error('AWS_SECRET_ACCESS_KEY environment variable is not set');
 
     this.bucket = bucket;
     this.profileFolder = this.config.get<string>(
@@ -100,11 +103,10 @@ export class S3Service {
     // Format: profile-images/{userId}/{randomHex}.{ext}
     const key = this.buildProfileImageKey(
       userId,
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+
       file.mimetype as AllowedImageType,
     );
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
     return this.uploadToS3(key, file.buffer, file.mimetype);
   }
 
@@ -124,11 +126,10 @@ export class S3Service {
     const key = this.buildTempImageKey(
       userId,
       imageType,
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+
       file.mimetype as AllowedImageType,
     );
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
     return this.uploadToS3(key, file.buffer, file.mimetype);
   }
 
@@ -273,20 +274,16 @@ export class S3Service {
    * Note: MIME type from Multer is based on file content, not extension.
    */
   private validateFile(file: Express.Multer.File): void {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     if (!file || !file.buffer) {
       throw new BadRequestException('No file provided');
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     if (!ALLOWED_IMAGE_TYPES.includes(file.mimetype as AllowedImageType)) {
       throw new BadRequestException(
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         `Invalid file type: ${file.mimetype}. Allowed types: JPEG, PNG, WebP`,
       );
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     if (file.size > MAX_FILE_SIZE_BYTES) {
       throw new BadRequestException(
         `File too large. Maximum size is ${MAX_FILE_SIZE_BYTES / (1024 * 1024)}MB`,

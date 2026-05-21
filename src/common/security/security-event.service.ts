@@ -29,16 +29,16 @@ export class SecurityEventService {
    */
   async log(params: LogEventParams): Promise<void> {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
       await this.prisma.securityEventLog.create({
         data: {
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
           eventType: params.eventType,
           userId: params.userId ?? null,
           ipAddress: params.ipAddress ?? null,
           // Cast required: Record<string,unknown> is wider than Prisma's InputJsonValue.
           // Prisma.JsonNull is used instead of null for nullable JSON fields in Prisma 7.
-          metadata: (params.metadata as Prisma.InputJsonValue | undefined) ?? Prisma.JsonNull,
+          metadata:
+            (params.metadata as Prisma.InputJsonValue | undefined) ??
+            Prisma.JsonNull,
         },
       });
     } catch (error) {
@@ -57,14 +57,12 @@ export class SecurityEventService {
   async logLoginFailed(
     params: Omit<LogEventParams, 'eventType'>,
   ): Promise<void> {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
     return this.log({ ...params, eventType: SecurityEvent.LOGIN_FAILED });
   }
 
   async logLoginSuccess(
     params: Omit<LogEventParams, 'eventType'>,
   ): Promise<void> {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
     return this.log({ ...params, eventType: SecurityEvent.LOGIN_SUCCESS });
   }
 
@@ -73,7 +71,7 @@ export class SecurityEventService {
   ): Promise<void> {
     return this.log({
       ...params,
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+
       eventType: SecurityEvent.VERIFICATION_FAILED,
     });
   }
@@ -83,7 +81,7 @@ export class SecurityEventService {
   ): Promise<void> {
     return this.log({
       ...params,
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+
       eventType: SecurityEvent.VERIFICATION_PASSED,
     });
   }
@@ -93,7 +91,7 @@ export class SecurityEventService {
   ): Promise<void> {
     return this.log({
       ...params,
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+
       eventType: SecurityEvent.PASSWORD_RESET_REQUESTED,
     });
   }
@@ -101,7 +99,6 @@ export class SecurityEventService {
   async logPasswordChanged(
     params: Omit<LogEventParams, 'eventType'>,
   ): Promise<void> {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
     return this.log({ ...params, eventType: SecurityEvent.PASSWORD_CHANGED });
   }
 
@@ -110,7 +107,7 @@ export class SecurityEventService {
   ): Promise<void> {
     return this.log({
       ...params,
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+
       eventType: SecurityEvent.SESSIONS_REVOKED_BY_USER,
     });
   }
@@ -120,7 +117,7 @@ export class SecurityEventService {
   ): Promise<void> {
     return this.log({
       ...params,
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+
       eventType: SecurityEvent.REVOKED_TOKEN_REUSE,
     });
   }
@@ -130,7 +127,7 @@ export class SecurityEventService {
   ): Promise<void> {
     return this.log({
       ...params,
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+
       eventType: SecurityEvent.RATE_LIMIT_EXCEEDED,
     });
   }

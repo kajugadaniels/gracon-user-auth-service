@@ -14,8 +14,7 @@ export class VerifyEmailDto {
   @ApiProperty({
     description:
       'The raw verification token included in the email link. A 64-character hex string that is hashed before being compared to the stored token hash.',
-    example:
-      'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2',
+    example: 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2',
   })
   @IsString()
   @IsNotEmpty({ message: 'Verification token is required' })
