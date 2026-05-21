@@ -27,6 +27,11 @@ import { VerifyEmailDto } from './dto/verify-email.dto';
 import { ResendVerificationDto } from './dto/resend-verification.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import {
+  UpdateUserPreferencesDto,
+  UserInviteVerificationPreferenceDtoValue,
+  UserPreferencesResponseDto,
+} from './dto/user-preferences.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { profileUploadConfig } from '../../common/aws/s3/multer.config';
@@ -314,10 +319,97 @@ export class UsersController {
       },
     },
   })
-  // eslint-disable-next-line @typescript-eslint/require-await
   async getProfile(@CurrentUser() userId: string) {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call
     return this.usersService.getProfile(userId);
+  }
+
+  /**
+   * GET /api/v1/users/preferences
+   * General limit — small authenticated read used by cross-platform frontends.
+   */
+  @Get('preferences')
+  @ThrottleGeneral()
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Retrieve user invitation defaults',
+    description:
+      'Returns cross-platform defaults used by Gracon frontends when opening document and meeting invitation dialogs. ' +
+      'These preferences only preselect UI verification gates; document and meeting services still enforce their own access rules. ' +
+      '`NO_VERIFICATION` is exclusive and must not be combined with `EMAIL_OTP` or `IDENTITY_VERIFICATION`.',
+  })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Preferences returned successfully. If the user has never saved settings, no-verification defaults are returned.',
+    type: UserPreferencesResponseDto,
+    schema: {
+      example: {
+        defaultDocumentInviteVerifications: [
+          UserInviteVerificationPreferenceDtoValue.NO_VERIFICATION,
+        ],
+        defaultMeetingInviteVerifications: [
+          UserInviteVerificationPreferenceDtoValue.NO_VERIFICATION,
+        ],
+      },
+    },
+  })
+  @ApiResponse({
+    status: 401,
+    description:
+      'Access token is missing, malformed, expired, or the account is inactive.',
+  })
+  async getPreferences(
+    @CurrentUser() userId: string,
+  ): Promise<UserPreferencesResponseDto> {
+    return this.usersService.getPreferences(userId);
+  }
+
+  /**
+   * PATCH /api/v1/users/preferences
+   * General limit — authenticated account settings update.
+   */
+  @Patch('preferences')
+  @ThrottleGeneral()
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Update user invitation defaults',
+    description:
+      'Updates cross-platform defaults used by document and meeting invitation dialogs. ' +
+      'Only provided fields are replaced. Use `[NO_VERIFICATION]` when the user wants invitation dialogs to start with no extra verification selected. ' +
+      'The service rejects any request that combines `NO_VERIFICATION` with another verification gate.',
+  })
+  @ApiBody({ type: UpdateUserPreferencesDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Preferences saved successfully.',
+    type: UserPreferencesResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Validation failed because an unsupported preference was supplied or NO_VERIFICATION was combined with another gate.',
+    schema: {
+      example: {
+        statusCode: 400,
+        message:
+          'Document invitation defaults cannot combine NO_VERIFICATION with EMAIL_OTP or IDENTITY_VERIFICATION.',
+      },
+    },
+  })
+  @ApiResponse({
+    status: 401,
+    description:
+      'Access token is missing, malformed, expired, or the account is inactive.',
+  })
+  async updatePreferences(
+    @CurrentUser() userId: string,
+    @Body() dto: UpdateUserPreferencesDto,
+  ): Promise<UserPreferencesResponseDto> {
+    return this.usersService.updatePreferences(userId, dto);
   }
 
   /**
@@ -390,12 +482,10 @@ export class UsersController {
       },
     },
   })
-  // eslint-disable-next-line @typescript-eslint/require-await
   async updateProfile(
     @CurrentUser() userId: string,
     @Body() dto: UpdateProfileDto,
   ) {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call
     return this.usersService.updateProfile(userId, dto);
   }
 
@@ -470,12 +560,10 @@ export class UsersController {
       example: { statusCode: 401, message: 'Unauthorized' },
     },
   })
-  // eslint-disable-next-line @typescript-eslint/require-await
   async uploadProfileImage(
     @CurrentUser() userId: string,
     @UploadedFile() file: Express.Multer.File,
   ) {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call
     return this.usersService.uploadProfileImage(userId, file);
   }
 
@@ -550,12 +638,10 @@ export class UsersController {
       },
     },
   })
-  // eslint-disable-next-line @typescript-eslint/require-await
   async changePassword(
     @CurrentUser() userId: string,
     @Body() dto: ChangePasswordDto,
   ) {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call
     return this.usersService.changePassword(userId, dto);
   }
 }
