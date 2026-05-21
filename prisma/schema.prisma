@@ -60,6 +60,7 @@ model User {
   meetingRecordingsStarted               MeetingRecording[]                      @relation("MeetingRecordingStarter")
   meetingAuditEventsActed                MeetingAuditLog[]                       @relation("MeetingAuditActor")
   meetingAuditEventsTargeted             MeetingAuditLog[]                       @relation("MeetingAuditTarget")
+  userPreference                         UserPreference?
 
   // ── Query pattern indexes ──────────────────────────────────────────────────
   // isActive and isIdVerified are boolean but queried with equality predicates
@@ -71,6 +72,30 @@ model User {
   @@index([isActive, createdAt])
   @@index([isVerified, isIdVerified, createdAt])
   @@map("users")
+}
+
+// ─── User Preferences ────────────────────────────────────────────────────────
+// Stores cross-platform defaults that user-facing apps consume when opening
+// invitation dialogs. These defaults never bypass downstream service access
+// checks; documents and meetings still enforce their own invitation gates.
+model UserPreference {
+  id                                 String                             @id @default(uuid())
+  userId                             String                             @unique
+  defaultDocumentInviteVerifications UserInviteVerificationPreference[] @default([NO_VERIFICATION])
+  defaultMeetingInviteVerifications  UserInviteVerificationPreference[] @default([NO_VERIFICATION])
+  createdAt                          DateTime                           @default(now())
+  updatedAt                          DateTime                           @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([updatedAt])
+  @@map("user_preferences")
+}
+
+enum UserInviteVerificationPreference {
+  NO_VERIFICATION
+  EMAIL_OTP
+  IDENTITY_VERIFICATION
 }
 
 // ─── Citizen Identities ───────────────────────────────────────────────────────
@@ -1366,12 +1391,12 @@ model MeetingParticipant {
 // Invite tokens are stored hashed only. Raw invite tokens are sent once by email
 // or copied link and can be revoked without deleting meeting audit history.
 model MeetingInvite {
-  id                            String                                  @id @default(uuid())
+  id                            String                                 @id @default(uuid())
   meetingId                     String
   inviterId                     String
   invitedUserId                 String?
-  email                         String                                  @db.VarChar(255)
-  tokenHash                     String                                  @unique
+  email                         String                                 @db.VarChar(255)
+  tokenHash                     String                                 @unique
   requiredVerifications         MeetingInviteVerificationRequirement[] @default([EMAIL_OTP])
   expiresAt                     DateTime
   openedAt                      DateTime?
@@ -1379,14 +1404,14 @@ model MeetingInvite {
   emailOtpSentAt                DateTime?
   emailOtpExpiresAt             DateTime?
   emailOtpVerifiedAt            DateTime?
-  emailOtpAttemptCount          Int                                     @default(0)
+  emailOtpAttemptCount          Int                                    @default(0)
   identityChallengeStartedAt    DateTime?
   identityVerificationAttemptId String?
   identityVerifiedAt            DateTime?
   completedAt                   DateTime?
   acceptedAt                    DateTime?
   revokedAt                     DateTime?
-  createdAt                     DateTime                                @default(now())
+  createdAt                     DateTime                               @default(now())
 
   meeting     Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
   inviter     User    @relation("MeetingInviteSender", fields: [inviterId], references: [id])
