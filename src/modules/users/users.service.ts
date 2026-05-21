@@ -11,7 +11,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
-import { IdentityType } from '@prisma/client';
+import { IdentityType, UserInviteVerificationPreference } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { EncryptionService } from '../../common/crypto/encryption.service';
 import { S3Service } from '../../common/aws/s3/s3.service';
@@ -24,8 +24,17 @@ import { VerifyEmailDto } from './dto/verify-email.dto';
 import { ResendVerificationDto } from './dto/resend-verification.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import {
+  UpdateUserPreferencesDto,
+  UserInviteVerificationPreferenceDtoValue,
+  UserPreferencesResponseDto,
+} from './dto/user-preferences.dto';
 import { RegistrationResult } from './interfaces/registration-result.interface';
 import { SecurityEventService } from '../../common/security/security-event.service';
+import {
+  normalizeUserInviteVerificationPreferences,
+  type UserInviteVerificationPreferenceValue,
+} from './user-preferences.helper';
 import type {
   AuthTokens,
   JwtPayload,
@@ -40,6 +49,11 @@ interface RegistrationIdentityRecord {
   sex: string;
   dateOfBirth: Date;
   countryOfBirth: string;
+}
+
+interface UserPreferenceRecord {
+  defaultDocumentInviteVerifications: UserInviteVerificationPreference[];
+  defaultMeetingInviteVerifications: UserInviteVerificationPreference[];
 }
 
 @Injectable()
@@ -235,9 +249,7 @@ export class UsersService {
 
   // ─── Email Verification ───────────────────────────────────────────────────
 
-  async verifyEmail(
-    dto: VerifyEmailDto,
-  ): Promise<{
+  async verifyEmail(dto: VerifyEmailDto): Promise<{
     success: boolean;
     message: string;
     tokenType?: 'limited';
@@ -579,6 +591,85 @@ export class UsersService {
   // ─── Profile ──────────────────────────────────────────────────────────────
 
   /**
+   * Returns cross-platform invitation defaults for the authenticated user.
+   *
+   * @param userId - Authenticated user id from the validated JWT.
+   * @returns Saved user preferences or secure no-verification defaults when no row exists yet.
+   */
+  async getPreferences(userId: string): Promise<UserPreferencesResponseDto> {
+    const preferences = await this.prisma.userPreference.findUnique({
+      where: { userId },
+      select: {
+        defaultDocumentInviteVerifications: true,
+        defaultMeetingInviteVerifications: true,
+      },
+    });
+
+    return this.formatUserPreferences(preferences);
+  }
+
+  /**
+   * Updates cross-platform invitation defaults for the authenticated user.
+   *
+   * @param userId - Authenticated user id from the validated JWT.
+   * @param dto - Partial preference replacement submitted by the client.
+   * @returns The saved preference values after normalization.
+   */
+  async updatePreferences(
+    userId: string,
+    dto: UpdateUserPreferencesDto,
+  ): Promise<UserPreferencesResponseDto> {
+    const currentPreferences = await this.prisma.userPreference.findUnique({
+      where: { userId },
+      select: {
+        defaultDocumentInviteVerifications: true,
+        defaultMeetingInviteVerifications: true,
+      },
+    });
+
+    const current = this.formatUserPreferences(currentPreferences);
+    const defaultDocumentInviteVerifications =
+      normalizeUserInviteVerificationPreferences(
+        dto.defaultDocumentInviteVerifications ??
+          current.defaultDocumentInviteVerifications,
+        'Document invitation defaults',
+      );
+    const defaultMeetingInviteVerifications =
+      normalizeUserInviteVerificationPreferences(
+        dto.defaultMeetingInviteVerifications ??
+          current.defaultMeetingInviteVerifications,
+        'Meeting invitation defaults',
+      );
+
+    const savedPreferences = await this.prisma.userPreference.upsert({
+      where: { userId },
+      create: {
+        userId,
+        defaultDocumentInviteVerifications: this.toPrismaPreferenceValues(
+          defaultDocumentInviteVerifications,
+        ),
+        defaultMeetingInviteVerifications: this.toPrismaPreferenceValues(
+          defaultMeetingInviteVerifications,
+        ),
+      },
+      update: {
+        defaultDocumentInviteVerifications: this.toPrismaPreferenceValues(
+          defaultDocumentInviteVerifications,
+        ),
+        defaultMeetingInviteVerifications: this.toPrismaPreferenceValues(
+          defaultMeetingInviteVerifications,
+        ),
+      },
+      select: {
+        defaultDocumentInviteVerifications: true,
+        defaultMeetingInviteVerifications: true,
+      },
+    });
+
+    return this.formatUserPreferences(savedPreferences);
+  }
+
+  /**
    * Returns the full safe profile for the authenticated user.
    *
    * - Citizen identity fields (name, DOB, sex, country) are included.
@@ -662,6 +753,59 @@ export class UsersService {
           }
         : null,
     };
+  }
+
+  /**
+   * Formats persisted preference rows into the public response contract.
+   *
+   * @param preferences - Optional persisted preference row.
+   * @returns Normalized preference response safe for frontend apps.
+   */
+  private formatUserPreferences(
+    preferences: UserPreferenceRecord | null,
+  ): UserPreferencesResponseDto {
+    return {
+      defaultDocumentInviteVerifications:
+        normalizeUserInviteVerificationPreferences(
+          this.fromPrismaPreferenceValues(
+            preferences?.defaultDocumentInviteVerifications,
+          ),
+          'Document invitation defaults',
+        ),
+      defaultMeetingInviteVerifications:
+        normalizeUserInviteVerificationPreferences(
+          this.fromPrismaPreferenceValues(
+            preferences?.defaultMeetingInviteVerifications,
+          ),
+          'Meeting invitation defaults',
+        ),
+    };
+  }
+
+  /**
+   * Converts Prisma enum values into the public DTO enum shape.
+   *
+   * @param values - Persisted Prisma preference values.
+   * @returns Public preference values.
+   */
+  private fromPrismaPreferenceValues(
+    values: UserInviteVerificationPreference[] | undefined,
+  ): UserInviteVerificationPreferenceValue[] | undefined {
+    return values?.map(
+      (value) => value as UserInviteVerificationPreferenceDtoValue,
+    );
+  }
+
+  /**
+   * Converts public DTO enum values into Prisma enum values.
+   *
+   * @param values - Public preference values accepted by the API.
+   * @returns Prisma-compatible enum values.
+   */
+  private toPrismaPreferenceValues(
+    values: UserInviteVerificationPreferenceValue[],
+  ): UserInviteVerificationPreference[] {
+    return values.map((value) => value as UserInviteVerificationPreference);
   }
 
   /**
