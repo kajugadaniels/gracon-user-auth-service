@@ -32,6 +32,12 @@ import {
   UserInviteVerificationPreferenceDtoValue,
   UserPreferencesResponseDto,
 } from './dto/user-preferences.dto';
+import {
+  UserActivityCategoryDtoValue,
+  UserActivityOrderDtoValue,
+  UserActivityQueryDto,
+  UserActivityResponseDto,
+} from './dto/user-activity.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { profileUploadConfig } from '../../common/aws/s3/multer.config';
@@ -410,6 +416,73 @@ export class UsersController {
     @Body() dto: UpdateUserPreferencesDto,
   ): Promise<UserPreferencesResponseDto> {
     return this.usersService.updatePreferences(userId, dto);
+  }
+
+  /**
+   * GET /api/v1/users/activity
+   * General limit — authenticated read of the caller's own immutable events.
+   */
+  @Get('activity')
+  @ThrottleGeneral()
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Retrieve authenticated user activity',
+    description:
+      'Returns a paginated, read-only account activity feed for the authenticated user. ' +
+      'The endpoint is scoped to the caller and does not allow mutation or deletion. ' +
+      'Raw security-event metadata is intentionally not returned; the service exposes only safe presentation fields, timestamps, event codes, and recorded IP addresses when available.',
+  })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    example: 1,
+    description: 'One-based page number.',
+  })
+  @ApiQuery({
+    name: 'pageSize',
+    required: false,
+    example: 12,
+    description: 'Rows per page. Defaults to 12 and is capped at 50.',
+  })
+  @ApiQuery({
+    name: 'category',
+    required: false,
+    enum: UserActivityCategoryDtoValue,
+    example: UserActivityCategoryDtoValue.ALL,
+    description:
+      'Filter by activity category: all, authentication, verification, account, or security.',
+  })
+  @ApiQuery({
+    name: 'order',
+    required: false,
+    enum: UserActivityOrderDtoValue,
+    example: UserActivityOrderDtoValue.NEWEST,
+    description: 'Sort activity by newest or oldest first.',
+  })
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    example: 'login',
+    description:
+      'Searches safe labels, descriptions, categories, and event codes. Raw metadata is not searched or returned.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Activity feed returned successfully.',
+    type: UserActivityResponseDto,
+  })
+  @ApiResponse({
+    status: 401,
+    description:
+      'Access token is missing, malformed, expired, or the account is inactive.',
+  })
+  async getActivity(
+    @CurrentUser() userId: string,
+    @Query() query: UserActivityQueryDto,
+  ): Promise<UserActivityResponseDto> {
+    return this.usersService.getActivity(userId, query);
   }
 
   /**
