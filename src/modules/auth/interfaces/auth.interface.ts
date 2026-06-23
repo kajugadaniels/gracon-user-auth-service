@@ -1,4 +1,4 @@
-import { IdentityType } from '@prisma/client';
+import { IdentityType } from '@gracon/database';
 
 // Shapes for JWT payload and auth responses
 // Keeping these explicit prevents accidentally leaking sensitive fields
