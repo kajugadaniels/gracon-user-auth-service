@@ -15,7 +15,7 @@ import {
   IdentityType,
   SecurityEvent,
   UserInviteVerificationPreference,
-} from '@prisma/client';
+} from '@gracon/database';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { EncryptionService } from '../../common/crypto/encryption.service';
 import { S3Service } from '../../common/aws/s3/s3.service';
