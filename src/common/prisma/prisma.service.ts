@@ -1,7 +1,5 @@
 import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
-import { PrismaClient } from '@prisma/client';
-import { PrismaPg } from '@prisma/adapter-pg';
-import { normalizeDatabaseUrl } from './database-url.util';
+import { createPrismaClientOptions, PrismaClient } from '@gracon/database';
 
 // PrismaService wraps PrismaClient and integrates with NestJS lifecycle
 // OnModuleInit  → connects to DB when the app starts
@@ -12,16 +10,7 @@ export class PrismaService
   implements OnModuleInit, OnModuleDestroy
 {
   constructor() {
-    // Prisma 7 requires a driver adapter — datasource url in schema.prisma is no longer supported.
-    // DATABASE_URL is validated by ConfigModule at startup, so this guard is a safety net only.
-    const connectionString = process.env.DATABASE_URL;
-    if (!connectionString) {
-      throw new Error('DATABASE_URL environment variable is not set');
-    }
-    const adapter = new PrismaPg({
-      connectionString: normalizeDatabaseUrl(connectionString),
-    });
-    super({ adapter });
+    super(createPrismaClientOptions());
   }
 
   async onModuleInit() {
