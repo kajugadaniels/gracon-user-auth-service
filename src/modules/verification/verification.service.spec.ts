@@ -4,7 +4,7 @@
  * verification before any storage or engine work begins.
  */
 import { BadRequestException } from '@nestjs/common';
-import { IdentityType } from '@prisma/client';
+import { IdentityType } from '@gracon/database';
 import { VerificationService } from './verification.service';
 
 describe('VerificationService.submitVerification', () => {
