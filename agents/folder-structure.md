@@ -9,7 +9,7 @@ src/
   common/           reusable infrastructure shared across modules
   config/           environment and application configuration
   modules/          business domains exposed by the API
-prisma/             schema, migrations, seeds, and generated-client ownership
+prisma/             guarded auth-only development seeds
 docs/               human architecture and integration contracts
 agents/             AI execution rules for this service
 test/               e2e and integration tests
@@ -52,4 +52,4 @@ src/modules/users/
 
 ## Cross-Service Schema Rule
 
-`api/database` owns shared Prisma migrations. If a schema table is used by another service, change it in `api/database` first, then update the consumer service during the generated-client migration.
+`api/database` owns shared Prisma migrations and generated-client ownership. If a schema table is used by another service, change it in `api/database` first, then regenerate the shared client.
