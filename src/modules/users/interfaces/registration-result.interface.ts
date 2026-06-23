@@ -1,4 +1,4 @@
-import { IdentityType } from '@prisma/client';
+import { IdentityType } from '@gracon/database';
 
 // What the registration endpoint returns to the frontend
 // Never includes sensitive fields like passwordHash, nidEncrypted, etc.
