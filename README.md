@@ -35,7 +35,7 @@ This service owns user registration, login, email verification, password reset, 
 ## Core Skills Needed
 
 - NestJS authentication and authorization patterns
-- Prisma schema ownership and migration discipline
+- Prisma query discipline and shared database-client usage
 - Secure token lifecycle design
 - Encryption-at-rest for sensitive identifiers
 - File upload validation and private S3 object handling
@@ -94,7 +94,7 @@ api/auth/
 ## AI Agent Rules
 
 Project-specific AI execution rules live in [`agents/README.md`](./agents/README.md).
-Read that guide before changing auth, sessions, verification, Prisma schema,
+Read that guide before changing auth, sessions, verification, database access,
 security-sensitive flows, or user/account APIs. These local rules supplement
 the monorepo root `AGENTS.md`; they do not override platform-wide security,
 service-boundary, or git-command rules.
