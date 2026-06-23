@@ -7,8 +7,8 @@
 
 - Do not run Prisma migrations from `api/auth`.
 - Shared schema changes start in `api/database/prisma/schema.prisma`.
-- Consumer services may mirror schema models during the transition but must not migrate shared tables.
-- Meeting table changes must be made in `api/database/prisma/schema.prisma` first, then mirrored into `api/meetings/prisma/schema.prisma`.
+- Consumer services import the generated Prisma client from `@gracon/database` and must not migrate shared tables.
+- Meeting table changes must be made in `api/database/prisma/schema.prisma` first, then the shared Prisma client must be regenerated.
 - Signature, institution, stamp, document, and meeting shared schema changes must preserve existing crypto and ownership contracts.
 
 ## Prisma Query Rules
