@@ -30,4 +30,4 @@ For docs-only changes, a build is not required. Say clearly that the change was 
 
 ## Prisma Validation
 
-If the Prisma schema changes, run or ask the user to run the appropriate Prisma validation/generation flow. Do not run migrations automatically.
+If the Prisma schema changes, run or ask the user to run the appropriate validation/generation flow in `api/database`. Do not run migrations automatically.
