@@ -2,11 +2,14 @@
 // This script creates login-ready users through the same persistence shape used
 // by registration: bcrypt password hashes plus encrypted/hash-backed NID and PID.
 import { ConfigService } from '@nestjs/config';
-import { IdentityType, Prisma, PrismaClient } from '@prisma/client';
-import { PrismaPg } from '@prisma/adapter-pg';
+import {
+  createPrismaClient,
+  IdentityType,
+  Prisma,
+  PrismaClient,
+} from '@gracon/database';
 import * as bcrypt from 'bcrypt';
 import { EncryptionService } from '../src/common/crypto/encryption.service';
-import { normalizeDatabaseUrl } from '../src/common/prisma/database-url.util';
 import {
   FAKE_VERIFIED_USER_PASSWORD,
   FakeVerifiedUserInput,
@@ -138,10 +141,7 @@ async function seedVerifiedUsers(): Promise<FakeVerifiedUserSeedResult> {
     process.exit(1);
   }
 
-  const adapter = new PrismaPg({
-    connectionString: normalizeDatabaseUrl(process.env.DATABASE_URL),
-  });
-  const prisma = new PrismaClient({ adapter });
+  const prisma = createPrismaClient();
   const encryption = new EncryptionService(new ConfigService());
   try {
     const passwordHash = await bcrypt.hash(
