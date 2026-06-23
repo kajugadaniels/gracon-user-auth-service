@@ -12,6 +12,9 @@ This service owns user registration, login, email verification, password reset, 
 - Primary consumers: `app/app`, selective validation from other APIs
 - Special role: source of truth for user JWT issuance and user identity/session behavior
 
+First clone database setup:
+[docs/database-setup.md](./docs/database-setup.md)
+
 ## What This Service Owns
 
 - User registration and login
