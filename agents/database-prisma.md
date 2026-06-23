@@ -1,12 +1,14 @@
 # api/auth Database and Prisma Rules
 
-`api/auth` owns the shared user-domain database schema.
+`api/auth` owns user identity, session, verification, and account data behavior.
+`api/database` owns the shared Prisma schema and migrations.
 
 ## Ownership Rules
 
-- Run migrations from `api/auth` only.
-- Consumer services may mirror schema models for Prisma client generation but must not migrate shared tables.
-- Meeting table changes must be made in `api/auth/prisma/schema.prisma` first, then mirrored into `api/meetings/prisma/schema.prisma`.
+- Do not run Prisma migrations from `api/auth`.
+- Shared schema changes start in `api/database/prisma/schema.prisma`.
+- Consumer services may mirror schema models during the transition but must not migrate shared tables.
+- Meeting table changes must be made in `api/database/prisma/schema.prisma` first, then mirrored into `api/meetings/prisma/schema.prisma`.
 - Signature, institution, stamp, document, and meeting shared schema changes must preserve existing crypto and ownership contracts.
 
 ## Prisma Query Rules
