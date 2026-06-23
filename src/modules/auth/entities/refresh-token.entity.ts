@@ -1,9 +1,9 @@
-import { RefreshToken as PrismaRefreshToken } from '@prisma/client';
+import { RefreshToken as PrismaRefreshToken } from '@gracon/database';
 
 /**
  * RefreshToken entity type — re-exported from Prisma generated client.
  *
- * The actual database schema is defined in prisma/schema.prisma.
+ * The actual database schema is defined in api/database/prisma/schema.prisma.
  * Prisma generates all TypeScript types automatically from that schema.
  * This file exists purely for documentation and convenient importing.
  *
