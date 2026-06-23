@@ -52,4 +52,4 @@ src/modules/users/
 
 ## Cross-Service Schema Rule
 
-`api/auth` owns shared Prisma migrations. If a schema table is used by another service, change it here first, then mirror the schema into the consumer service for Prisma client generation only.
+`api/database` owns shared Prisma migrations. If a schema table is used by another service, change it in `api/database` first, then update the consumer service during the generated-client migration.
