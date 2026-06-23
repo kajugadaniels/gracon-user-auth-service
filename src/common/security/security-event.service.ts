@@ -6,7 +6,7 @@
 // break the primary auth flow. All errors are caught and logged server-side.
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { Prisma, SecurityEvent } from '@prisma/client';
+import { Prisma, SecurityEvent } from '@gracon/database';
 
 interface LogEventParams {
   eventType: SecurityEvent;
