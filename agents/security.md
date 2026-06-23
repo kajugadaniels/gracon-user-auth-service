@@ -44,3 +44,7 @@
 - `api/auth` calls `engine/` using internal trust only.
 - Do not introduce direct frontend calls to the engine.
 - Do not let admin JWT trust overlap with user JWT trust.
+
+## Environment Rules
+
+- Use only runtime `DATABASE_URL` credentials here; `DATABASE_MIGRATION_URL` belongs only in `api/database`.
