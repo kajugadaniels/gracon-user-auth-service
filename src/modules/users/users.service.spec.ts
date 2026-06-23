@@ -9,7 +9,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { IdentityType } from '@prisma/client';
+import { IdentityType } from '@gracon/database';
 import { UsersService } from './users.service';
 import { RegisterDto } from './dto/register.dto';
 
