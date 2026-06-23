@@ -25,7 +25,7 @@ import {
   HttpStatus,
   Logger,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma } from '@gracon/database';
 import { Request, Response } from 'express';
 
 // Convenience aliases — the error classes live inside the Prisma namespace,
