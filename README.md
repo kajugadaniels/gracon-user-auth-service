@@ -8,9 +8,9 @@ This service owns user registration, login, email verification, password reset, 
 
 - Runtime: NestJS + TypeScript
 - Default port: `3000`
-- Database owner: shared Neon/Postgres via Prisma
+- Database access: shared Neon/Postgres via Prisma
 - Primary consumers: `app/app`, selective validation from other APIs
-- Special role: source of truth for user JWT issuance and shared auth schema migrations
+- Special role: source of truth for user JWT issuance and user identity/session behavior
 
 ## What This Service Owns
 
@@ -28,7 +28,7 @@ This service owns user registration, login, email verification, password reset, 
 - Shared persistence for personal certificate requests that must be approved before `api/signature` issues a real certificate
 - Shared admin-audit enum values for certificate-request approval and rejection actions emitted by `api/admin`
 - Shared persistence for per-user certificate access policy, so revocation history and hard certificate bans stay separate
-- Shared persistence for Gracon meetings tables used by `api/meetings`; migrations stay here while `api/meetings` mirrors the schema and runs Prisma generate only
+- Shared persistence for Gracon meetings data used by `api/meetings`; schema migrations belong to `api/database`
 - Shared persistence for user-level invitation defaults consumed by `app/documents` and `app/meetings`
 - User-facing account activity is served from `SecurityEventLog` through a presentation-safe read-only endpoint. Do not expose raw event metadata to frontend apps.
 
@@ -108,7 +108,6 @@ npm run build
 npm run test
 npm run lint
 npm run seed:verified-users
-npx prisma generate
 ```
 
 ## Environment Notes
@@ -143,7 +142,7 @@ MAIL_FROM=
 
 ## Development Fake Verified Users
 
-`api/auth` owns the fake verified user seed because this service owns user registration, login, password hashing, encrypted NID/PID storage, and shared auth schema migrations. Do not seed login-ready users from `api/institution` or another consumer service.
+`api/auth` owns the fake verified user seed because this service owns user registration, login, password hashing, and encrypted NID/PID persistence behavior. Do not seed login-ready users from `api/institution` or another consumer service.
 
 The fake verified user seed creates 100 Rwandan, login-ready users for local development or controlled test databases:
 
@@ -156,7 +155,7 @@ The fake verified user seed creates 100 Rwandan, login-ready users for local dev
 - Gmail-style addresses based on generated names
 - Rwandan phone numbers using `+25078`, `+25072`, or `+25073`
 
-The seed is intentionally separate from `npx prisma db seed`; the existing Prisma seed remains for the first `SUPER_ADMIN` only. Run fake users explicitly:
+The seed is intentionally separate from `api/database` database-owned seeds. Run fake users explicitly:
 
 ```bash
 ALLOW_FAKE_VERIFIED_USERS_SEED=true npm run seed:verified-users
@@ -179,9 +178,9 @@ Safety rules:
 
 ## Important Rules
 
-- This service owns shared schema migrations
-- Meeting table changes must be made here first, then copied to `api/meetings/prisma/schema.prisma`
-- Cross-platform user preference changes must be made here first. Documents and meetings consume those settings as UI defaults but still enforce their own backend invitation gates.
+- Shared schema migrations belong to `api/database`
+- Meeting table changes must be made in `api/database/prisma/schema.prisma` first, then propagated to meeting consumers during the generated-client migration
+- Cross-platform user preference behavior belongs here, but schema changes for those settings start in `api/database`. Documents and meetings consume those settings as UI defaults but still enforce their own backend invitation gates.
 - Never store NID/PID or refresh tokens in plain text
 - Limited-token routes must be explicit
 - A verified user with a stale limited session should be upgraded through `POST /auth/session/upgrade`, not forced to logout
